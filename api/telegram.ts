@@ -5,7 +5,7 @@ export function GET(): Response {
   return Response.json({
     ok: true,
     endpoint: "/api/telegram",
-    status: "healthy"
+    status: "healthy",
   });
 }
 
@@ -19,8 +19,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
+    const bot = getBot();
+    await bot.init();
     const update = await request.json();
-    await getBot().handleUpdate(update);
+    await bot.handleUpdate(update);
   } catch (error) {
     console.error("telegram-webhook-error", error);
   }
