@@ -95,11 +95,11 @@ async function openMailTicking(page: Page): Promise<void> {
   await randomDelay(600, 1_200);
 }
 
-async function waitForActiveMailbox(page: Page): Promise<{ email: string; code: string }> {
+async function waitForActiveMailbox(page: Page, timeout = PLAYWRIGHT_DEFAULT_TIMEOUT_MS): Promise<{ email: string; code: string }> {
   await page.waitForFunction(() => {
     const input = document.querySelector("#active-mail") as HTMLInputElement | null;
     return Boolean(input && input.value.includes("@") && input.getAttribute("data-code"));
-  });
+  }, { timeout });
 
   return page.evaluate(() => {
     const input = document.querySelector("#active-mail") as HTMLInputElement | null;
@@ -110,52 +110,99 @@ async function waitForActiveMailbox(page: Page): Promise<{ email: string; code: 
   });
 }
 
-async function readPublicDomains(page: Page): Promise<string[]> {
-  const domains = await page.evaluate(() => {
-    return Array.from(document.querySelectorAll('.dropdown-menu a[data-type="4"][data-vip="false"]'))
-      .map((item) => item.textContent?.trim() ?? "")
-      .map((item) => item.replace(/^@/, "").trim())
-      .filter((item) => item.length > 0 && !item.includes("gmail"));
-  });
-
-  return Array.from(new Set(domains));
-}
-
-async function changeMailboxDomain(page: Page, currentEmail: string, currentCode: string, domain: string): Promise<void> {
-  const result = await page.evaluate(async ({ email, code, nextDomain }) => {
-    const response = await fetch("/change-mailbox", {
+async function postJson(page: Page, url: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const payload = await page.evaluate(async ({ targetUrl, targetBody }) => {
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json"
       },
-      body: JSON.stringify({
-        oldMail: email,
-        code,
-        type: 4,
-        domain: nextDomain
-      })
+      body: JSON.stringify(targetBody)
     });
 
-    let payload: unknown;
+    let responsePayload: unknown;
     try {
-      payload = await response.json();
+      responsePayload = await response.json();
     } catch {
-      payload = undefined;
+      responsePayload = undefined;
     }
 
     return {
       ok: response.ok,
-      payload
+      status: response.status,
+      payload: responsePayload
     };
-  }, { email: currentEmail, code: currentCode, nextDomain: domain });
+  }, { targetUrl: url, targetBody: body });
 
-  if (!result.ok) {
-    throw new Error(`MailTicking rejected domain change to ${domain}`);
+  if (!payload.ok) {
+    const responseBody = payload.payload && typeof payload.payload === "object"
+      ? payload.payload as Record<string, unknown>
+      : {};
+    const detail = typeof responseBody.error === "string"
+      ? responseBody.error
+      : typeof responseBody.message === "string"
+        ? responseBody.message
+        : `status ${payload.status}`;
+    throw new Error(`MailTicking request failed for ${url}: ${detail}`);
+  }
+
+  if (!payload.payload || typeof payload.payload !== "object") {
+    throw new Error(`MailTicking returned an invalid JSON payload for ${url}`);
+  }
+
+  return payload.payload as Record<string, unknown>;
+}
+
+async function generatePublicMailbox(page: Page): Promise<string> {
+  const payload = await postJson(page, "/get-mailbox", {
+    types: ["4"]
+  });
+
+  if (payload.success !== true || typeof payload.email !== "string" || !payload.email.includes("@")) {
+    throw new Error("MailTicking did not return a valid public mailbox");
+  }
+
+  if (extractDomain(payload.email).includes("gmail")) {
+    throw new Error(`MailTicking returned a Gmail mailbox unexpectedly: ${payload.email}`);
+  }
+
+  return payload.email;
+}
+
+async function activateMailbox(page: Page, email: string): Promise<void> {
+  const payload = await postJson(page, "/activate-email", { email });
+
+  if (payload.success !== true) {
+    throw new Error(`MailTicking could not activate mailbox ${email}`);
   }
 
   await randomDelay(700, 1_400);
   await page.reload({ waitUntil: "domcontentloaded" });
+}
+
+async function ensureActiveMailbox(page: Page, requestedEmail?: string): Promise<{ email: string; code: string }> {
+  try {
+    const current = await waitForActiveMailbox(page, 4_000);
+    if (!requestedEmail || current.email === requestedEmail) {
+      return current;
+    }
+  } catch {
+    // fall through to re-activate below
+  }
+
+  if (!requestedEmail) {
+    throw new MailboxExpiredError();
+  }
+
+  await activateMailbox(page, requestedEmail);
+
+  const activated = await waitForActiveMailbox(page, 8_000);
+  if (activated.email !== requestedEmail) {
+    throw new MailboxExpiredError(`Activated mailbox mismatch: expected ${requestedEmail}, got ${activated.email}`);
+  }
+
+  return activated;
 }
 
 function normalizeInboxFromJson(payload: unknown): InboxItem[] {
@@ -269,15 +316,9 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
     const page = await context.newPage();
     await openMailTicking(page);
 
-    let activeMailbox = await waitForActiveMailbox(page);
-    const publicDomains = await readPublicDomains(page);
-    const currentDomain = extractDomain(activeMailbox.email);
-    const nextDomain = publicDomains.find((domain) => domain !== currentDomain) ?? publicDomains[0];
-
-    if (nextDomain && (currentDomain.includes("gmail") || currentDomain.includes("googlemail") || currentDomain !== nextDomain)) {
-      await changeMailboxDomain(page, activeMailbox.email, activeMailbox.code, nextDomain);
-      activeMailbox = await waitForActiveMailbox(page);
-    }
+    const requestedEmail = await generatePublicMailbox(page);
+    await activateMailbox(page, requestedEmail);
+    const activeMailbox = await ensureActiveMailbox(page, requestedEmail);
 
     const inboxItems = await parseInboxFromDom(page);
     const storageState = await context.storageState();
@@ -304,42 +345,32 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
 }
 
 export async function refreshInbox(existingMailbox: { email: string; code: string; password: string; createdAt: string }, storageState?: BrowserStorageState): Promise<ScraperRefreshResult> {
-  if (!storageState) {
-    throw new MailboxExpiredError();
-  }
-
   const { browser, context } = await createBrowserContext(storageState);
 
   try {
     const page = await context.newPage();
     await openMailTicking(page);
 
-    let activeMailbox = await waitForActiveMailbox(page);
+    let activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
     if (!activeMailbox.email || !activeMailbox.code) {
       throw new MailboxExpiredError();
     }
 
-    const payload = await page.evaluate(async ({ email, code }) => {
-      const response = await fetch("/get-emails?lang=en", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json"
-        },
-        body: JSON.stringify({ email, code })
-      });
+    let payload = await postJson(page, "/get-emails?lang=en", activeMailbox);
 
-      return response.json().catch(() => undefined);
-    }, activeMailbox);
+    if (payload.needNewEmail) {
+      await activateMailbox(page, existingMailbox.email);
+      activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
+      payload = await postJson(page, "/get-emails?lang=en", activeMailbox);
 
-    const payloadRecord = payload as Record<string, unknown> | undefined;
-    if (payloadRecord?.needNewEmail) {
-      throw new MailboxExpiredError();
+      if (payload.needNewEmail) {
+        throw new MailboxExpiredError();
+      }
     }
 
     await randomDelay(800, 1_500);
     await page.reload({ waitUntil: "domcontentloaded" });
-    activeMailbox = await waitForActiveMailbox(page);
+    activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
 
     const domItems = await parseInboxFromDom(page);
     const jsonItems = normalizeInboxFromJson(payload);

@@ -5,6 +5,18 @@ import type { MailJobPayload } from "../../src/types.js";
 
 let receiver: Receiver | undefined;
 
+function toLoggableError(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+
+  return error;
+}
+
 function getReceiver(): Receiver {
   if (!receiver) {
     const config = getQStashConfig();
@@ -44,7 +56,7 @@ export async function POST(request: Request): Promise<Response> {
       return new Response("Invalid signature", { status: 401 });
     }
   } catch (error) {
-    console.error("qstash-signature-error", error);
+    console.error("qstash-signature-error", toLoggableError(error));
     return new Response("Invalid signature", { status: 401 });
   }
 
@@ -52,7 +64,7 @@ export async function POST(request: Request): Promise<Response> {
     const payload = JSON.parse(rawBody) as MailJobPayload;
     await runMailJob(payload);
   } catch (error) {
-    console.error("mailticking-job-error", error);
+    console.error("mailticking-job-error", toLoggableError(error));
   }
 
   return Response.json({ ok: true });

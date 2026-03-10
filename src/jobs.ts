@@ -17,6 +17,18 @@ import {
 } from "./sessions.js";
 import type { BrowserStorageState, MailJobPayload, ScraperMailboxResult, ScraperRefreshResult } from "./types.js";
 
+function toLoggableError(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+
+  return error;
+}
+
 async function sendResultMessage(chatId: number, locale: MailJobPayload["locale"], text: string, hasMailbox: boolean): Promise<void> {
   await getBot().api.sendMessage(chatId, text, {
     parse_mode: "HTML",
@@ -66,7 +78,7 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
       return;
     }
 
-    console.error("mail-job-error", error);
+    console.error("mail-job-error", toLoggableError(error));
     await getBot().api.sendMessage(payload.chatId, buildWorkerErrorMessage(locale), {
       parse_mode: "HTML",
       reply_markup: buildMainMenuKeyboard(locale, Boolean(session.mailbox))
