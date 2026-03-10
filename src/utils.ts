@@ -252,9 +252,9 @@ export function generateVirtualCards(bin: string, count: number) {
 
   for (let i = 0; i < count; i++) {
     const number = generateLuhnCard(bin);
-    // Expiry: Random month (01-12) and random year (current to +4 years)
+    // Expiry: Random month (01-12) and random year (current + 2 to +4 years)
     const month = randomBetween(1, 12).toString().padStart(2, "0");
-    const year = randomBetween(currentYear + 1, currentYear + 5).toString();
+    const year = randomBetween(currentYear + 2, currentYear + 4).toString();
     const expiry = `${month}/${year}`;
     // CVV: 3 random digits
     const cvv = randomBetween(100, 999).toString();
