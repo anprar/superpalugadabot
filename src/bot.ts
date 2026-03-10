@@ -3,10 +3,10 @@ import { I18n } from "@grammyjs/i18n";
 import { limit } from "@grammyjs/ratelimiter";
 import { Bot, session } from "grammy";
 import { getBotToken, getSupportedLocale } from "./config.js";
-import { buildMainMenuKeyboard, buildLanguageKeyboard, buildProcessingKeyboard } from "./keyboards.js";
-import { buildInboxMessage } from "./messages.js";
+import { buildHistoryKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard } from "./keyboards.js";
+import { buildHistoryMessage, buildInboxMessage, buildRestoreMissingMessage, buildRestoreQueuedMessage } from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
-import { createInitialSessionData, createSessionStorage, getRedisClient } from "./sessions.js";
+import { clearBrowserState, createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
 import type { BotContext, MailJobType, SupportedLocale } from "./types.js";
 
 type GlobalBotCache = typeof globalThis & { __mailTickingBot?: Bot<BotContext> };
@@ -40,6 +40,10 @@ function buildStartText(ctx: BotContext): string {
   return ctx.t("start_message");
 }
 
+function hasHistory(ctx: BotContext): boolean {
+  return Boolean(ctx.session.mailboxHistory?.length);
+}
+
 async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
   if (!ctx.chat || !ctx.from) {
     return;
@@ -48,7 +52,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
   const locale = getLocaleFromContext(ctx);
   if (type !== "generate" && !ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
-      reply_markup: buildMainMenuKeyboard(locale, false)
+      reply_markup: buildMainMenuKeyboard(locale, false, hasHistory(ctx))
     });
     return;
   }
@@ -64,7 +68,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
 
   if (!queued.ok) {
     await ctx.reply(queueRejectedCopy(locale, queued.reason), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox))
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
     });
     return;
   }
@@ -78,7 +82,7 @@ async function showInbox(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
   if (!ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
-      reply_markup: buildMainMenuKeyboard(locale, false)
+      reply_markup: buildMainMenuKeyboard(locale, false, hasHistory(ctx))
     });
     return;
   }
@@ -86,8 +90,66 @@ async function showInbox(ctx: BotContext): Promise<void> {
   await ctx.api.sendChatAction(ctx.chat!.id, "typing");
   await ctx.reply(buildInboxMessage(locale, ctx.session.mailbox, ctx.session.inboxCache), {
     parse_mode: "HTML",
-    reply_markup: buildMainMenuKeyboard(locale, true)
+    reply_markup: buildMainMenuKeyboard(locale, true, hasHistory(ctx))
   });
+}
+
+async function showHistory(ctx: BotContext): Promise<void> {
+  const locale = getLocaleFromContext(ctx);
+  const history = ctx.session.mailboxHistory ?? [];
+
+  await ctx.reply(buildHistoryMessage(locale, history, ctx.session.mailbox?.email), {
+    parse_mode: "HTML",
+    reply_markup: buildHistoryKeyboard(locale, history, ctx.session.mailbox?.email)
+  });
+}
+
+async function restoreMailbox(ctx: BotContext, email: string): Promise<void> {
+  if (!ctx.chat || !ctx.from) {
+    return;
+  }
+
+  const locale = getLocaleFromContext(ctx);
+  const selected = findMailboxInHistory(ctx.session.mailboxHistory, email);
+  if (!selected) {
+    await ctx.reply(buildRestoreMissingMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+    });
+    return;
+  }
+
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, selected);
+  await clearBrowserState(ctx.chat.id);
+  await patchChatSession(ctx.chat.id, (current) => ({
+    ...current,
+    mailbox: selected,
+    mailboxHistory: nextHistory,
+    inboxCache: undefined
+  }));
+
+  ctx.session.mailbox = selected;
+  ctx.session.mailboxHistory = nextHistory;
+  ctx.session.inboxCache = undefined;
+
+  await ctx.reply(buildRestoreQueuedMessage(locale, selected.email), {
+    parse_mode: "HTML",
+    reply_markup: buildProcessingKeyboard(locale)
+  });
+
+  const queued = await enqueueMailJob({
+    chatId: ctx.chat.id,
+    userId: ctx.from.id,
+    locale,
+    type: "refresh",
+    requestedAt: new Date().toISOString()
+  });
+
+  if (!queued.ok) {
+    await ctx.reply(queueRejectedCopy(locale, queued.reason), {
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+    });
+  }
 }
 
 function createI18n(): I18n<BotContext> {
@@ -123,7 +185,7 @@ function createBot(): Bot<BotContext> {
           ctx.chat.id,
           locale === "id" ? "Terlalu cepat. Tunggu sebentar lalu coba lagi." : "Too many requests. Please wait a moment and try again.",
           {
-            reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox))
+            reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
           }
         );
       }
@@ -133,7 +195,7 @@ function createBot(): Bot<BotContext> {
   bot.command("start", async (ctx) => {
     const locale = getLocaleFromContext(ctx);
     await ctx.reply(buildStartText(ctx), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox))
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
     });
   });
 
@@ -147,6 +209,10 @@ function createBot(): Bot<BotContext> {
 
   bot.command("inbox", async (ctx) => {
     await showInbox(ctx);
+  });
+
+  bot.command("history", async (ctx) => {
+    await showHistory(ctx);
   });
 
   bot.command("language", async (ctx) => {
@@ -171,6 +237,16 @@ function createBot(): Bot<BotContext> {
     await showInbox(ctx);
   });
 
+  bot.callbackQuery("mt:history", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showHistory(ctx);
+  });
+
+  bot.callbackQuery(/^mt:restore:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await restoreMailbox(ctx, ctx.match[1]);
+  });
+
   bot.callbackQuery("mt:lang:open", async (ctx) => {
     const locale = getLocaleFromContext(ctx);
     await ctx.answerCallbackQuery();
@@ -184,7 +260,7 @@ function createBot(): Bot<BotContext> {
     await ctx.i18n.setLocale(locale);
     await ctx.answerCallbackQuery(locale === "id" ? "Bahasa diubah" : "Language updated");
     await ctx.reply(locale === "id" ? "Bahasa aktif: Indonesia" : "Active language: English", {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox))
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
     });
   });
 
@@ -192,7 +268,7 @@ function createBot(): Bot<BotContext> {
     const locale = getLocaleFromContext(ctx);
     await ctx.answerCallbackQuery();
     await ctx.reply(buildStartText(ctx), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox))
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
     });
   });
 

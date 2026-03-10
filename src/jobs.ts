@@ -11,6 +11,7 @@ import {
   clearMailboxState,
   getBrowserState,
   getChatSession,
+  mergeMailboxHistory,
   patchChatSession,
   releaseJobLock,
   saveBrowserState
@@ -29,10 +30,16 @@ function toLoggableError(error: unknown): unknown {
   return error;
 }
 
-async function sendResultMessage(chatId: number, locale: MailJobPayload["locale"], text: string, hasMailbox: boolean): Promise<void> {
+async function sendResultMessage(
+  chatId: number,
+  locale: MailJobPayload["locale"],
+  text: string,
+  hasMailbox: boolean,
+  hasHistory: boolean
+): Promise<void> {
   await getBot().api.sendMessage(chatId, text, {
     parse_mode: "HTML",
-    reply_markup: buildMainMenuKeyboard(locale, hasMailbox)
+    reply_markup: buildMainMenuKeyboard(locale, hasMailbox, hasHistory)
   });
 }
 
@@ -55,8 +62,14 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
     if (payload.type === "generate") {
       const previousBrowserState = await getBrowserState<BrowserStorageState>(payload.chatId);
       const result = await generateMailbox(previousBrowserState);
-      await persistMailboxResult(payload.chatId, result);
-      await sendResultMessage(payload.chatId, locale, buildMailboxReadyMessage(locale, result.mailbox, result.inboxCache), true);
+      const nextSession = await persistMailboxResult(payload.chatId, result);
+      await sendResultMessage(
+        payload.chatId,
+        locale,
+        buildMailboxReadyMessage(locale, result.mailbox, result.inboxCache),
+        true,
+        Boolean(nextSession.mailboxHistory?.length)
+      );
       return;
     }
 
@@ -66,14 +79,20 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
 
     const browserState = await getBrowserState<BrowserStorageState>(payload.chatId);
     const refreshed = await refreshInbox(session.mailbox, browserState);
-    await persistRefreshResult(payload.chatId, refreshed);
-    await sendResultMessage(payload.chatId, locale, buildInboxMessage(locale, refreshed.mailbox, refreshed.inboxCache), true);
+    const nextSession = await persistRefreshResult(payload.chatId, refreshed);
+    await sendResultMessage(
+      payload.chatId,
+      locale,
+      buildInboxMessage(locale, refreshed.mailbox, refreshed.inboxCache),
+      true,
+      Boolean(nextSession.mailboxHistory?.length)
+    );
   } catch (error) {
     if (error instanceof MailboxExpiredError) {
       await clearMailboxState(payload.chatId);
       await getBot().api.sendMessage(payload.chatId, buildMailboxExpiredMessage(locale), {
         parse_mode: "HTML",
-        reply_markup: buildMainMenuKeyboard(locale, false)
+        reply_markup: buildMainMenuKeyboard(locale, false, Boolean(session.mailboxHistory?.length))
       });
       return;
     }
@@ -81,7 +100,7 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
     console.error("mail-job-error", toLoggableError(error));
     await getBot().api.sendMessage(payload.chatId, buildWorkerErrorMessage(locale), {
       parse_mode: "HTML",
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(session.mailbox))
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(session.mailbox), Boolean(session.mailboxHistory?.length))
     });
   } finally {
     await clearPendingJob(payload);
@@ -89,21 +108,23 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
   }
 }
 
-async function persistMailboxResult(chatId: number, result: ScraperMailboxResult): Promise<void> {
+async function persistMailboxResult(chatId: number, result: ScraperMailboxResult) {
   await saveBrowserState(chatId, result.storageState);
-  await patchChatSession(chatId, (current) => ({
+  return patchChatSession(chatId, (current) => ({
     ...current,
     mailbox: result.mailbox,
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox),
     inboxCache: result.inboxCache,
     pendingJob: undefined
   }));
 }
 
-async function persistRefreshResult(chatId: number, result: ScraperRefreshResult): Promise<void> {
+async function persistRefreshResult(chatId: number, result: ScraperRefreshResult) {
   await saveBrowserState(chatId, result.storageState);
-  await patchChatSession(chatId, (current) => ({
+  return patchChatSession(chatId, (current) => ({
     ...current,
     mailbox: result.mailbox,
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox),
     inboxCache: result.inboxCache,
     pendingJob: undefined
   }));

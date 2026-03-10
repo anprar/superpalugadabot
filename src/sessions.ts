@@ -1,7 +1,7 @@
 import { Redis } from "@upstash/redis";
 import type { StorageAdapter } from "grammy";
-import type { BotSessionData, InboxCache, MailJobType } from "./types.js";
-import { getRedisConfig, SESSION_TTL_SECONDS } from "./config.js";
+import type { BotSessionData, InboxCache, MailJobType, MailboxSession } from "./types.js";
+import { getRedisConfig, MAX_MAILBOX_HISTORY_ITEMS, SESSION_TTL_SECONDS } from "./config.js";
 
 const SESSION_PREFIX = "mt:session:";
 const BROWSER_PREFIX = "mt:browser:";
@@ -85,13 +85,17 @@ export async function saveBrowserState(chatId: number, storageState: unknown): P
   await getRedisClient().set(browserKey(chatId), storageState, { ex: SESSION_TTL_SECONDS });
 }
 
+export async function clearBrowserState(chatId: number): Promise<void> {
+  await getRedisClient().del(browserKey(chatId));
+}
+
 export async function getBrowserState<T>(chatId: number): Promise<T | undefined> {
   const state = await getRedisClient().get<T>(browserKey(chatId));
   return state ?? undefined;
 }
 
 export async function clearMailboxState(chatId: number): Promise<void> {
-  await getRedisClient().del(browserKey(chatId));
+  await clearBrowserState(chatId);
   await patchChatSession(chatId, (current) => ({
     ...current,
     mailbox: undefined,
@@ -139,4 +143,20 @@ export async function consumeActionQuota(
     allowed: count <= limit,
     retryAfterSeconds
   };
+}
+
+export function mergeMailboxHistory(
+  history: MailboxSession[] | undefined,
+  mailbox: MailboxSession,
+  limit = MAX_MAILBOX_HISTORY_ITEMS
+): MailboxSession[] {
+  const nextHistory = [mailbox, ...(history ?? []).filter((item) => item.email !== mailbox.email)];
+  return nextHistory.slice(0, limit);
+}
+
+export function findMailboxInHistory(
+  history: MailboxSession[] | undefined,
+  email: string
+): MailboxSession | undefined {
+  return (history ?? []).find((item) => item.email === email);
 }

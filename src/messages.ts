@@ -1,4 +1,4 @@
-import type { InboxCache, InboxItem, MailboxSession, SupportedLocale } from "./types.js";
+import type { InboxCache, InboxItem, KoreaProfileSuggestion, MailboxSession, SupportedLocale } from "./types.js";
 import { MAILTICKING_URL } from "./config.js";
 import { escapeHtml, formatBirthDate, formatDateTime, getAgeYears, trimPreview } from "./utils.js";
 
@@ -13,6 +13,18 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     recommendedName: "Nama rekomendasi",
     birthDate: "Tanggal lahir",
     age: "Umur sekarang",
+    koreanProfiles: "Rekomendasi profil Korea",
+    address: "Alamat",
+    cityDistrict: "Kota / Kabupaten",
+    postalCode: "Kode pos",
+    noProfiles: "Belum ada rekomendasi profil.",
+    historyTitle: "Riwayat email",
+    historyEmpty: "Belum ada email tersimpan untuk direstore.",
+    historyCurrent: "aktif sekarang",
+    historyCreated: "dibuat",
+    historyUpdated: "diperbarui",
+    restoreQueued: "Email lama berhasil dipilih. Bot sedang mencoba restore dan refresh inbox.",
+    restoreMissing: "Email tersebut tidak ditemukan di riwayat.",
     domain: "Domain",
     syncedAt: "Sinkron terakhir",
     inboxItems: "Email terbaru",
@@ -33,6 +45,18 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     recommendedName: "Recommended name",
     birthDate: "Date of birth",
     age: "Current age",
+    koreanProfiles: "Recommended Korean profiles",
+    address: "Address",
+    cityDistrict: "City / District",
+    postalCode: "Postal code",
+    noProfiles: "No profile recommendations yet.",
+    historyTitle: "Email history",
+    historyEmpty: "No saved emails are available to restore.",
+    historyCurrent: "current",
+    historyCreated: "created",
+    historyUpdated: "updated",
+    restoreQueued: "The older email was selected. The bot is now restoring it and refreshing the inbox.",
+    restoreMissing: "That email was not found in history.",
     domain: "Domain",
     syncedAt: "Last synced",
     inboxItems: "Recent emails",
@@ -65,6 +89,26 @@ function renderInboxItems(locale: SupportedLocale, items: InboxItem[]): string {
     .join("\n\n");
 }
 
+function renderKoreanProfiles(locale: SupportedLocale, items: KoreaProfileSuggestion[]): string {
+  if (items.length === 0) {
+    return copy(locale, "noProfiles");
+  }
+
+  return items
+    .map((item, index) => {
+      const age = getAgeYears(item.birthDate);
+      return [
+        `${index + 1}. <b>${escapeHtml(item.fullName)}</b>`,
+        `  <b>${copy(locale, "birthDate")}</b> ${escapeHtml(formatBirthDate(item.birthDate, locale))}`,
+        `  <b>${copy(locale, "age")}</b> ${escapeHtml(`${age}`)}`,
+        `  <b>${copy(locale, "address")}</b> ${escapeHtml(item.addressLine)}`,
+        `  <b>${copy(locale, "cityDistrict")}</b> ${escapeHtml(`${item.city}, ${item.district}`)}`,
+        `  <b>${copy(locale, "postalCode")}</b> ${escapeHtml(item.postalCode)}`
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
 function renderBaseMailbox(locale: SupportedLocale, mailbox: MailboxSession): string {
   const age = getAgeYears(mailbox.identity.birthDate);
 
@@ -84,6 +128,9 @@ function renderBaseMailbox(locale: SupportedLocale, mailbox: MailboxSession): st
     "",
     `<b>${copy(locale, "birthDate")}</b> ${escapeHtml(formatBirthDate(mailbox.identity.birthDate, locale))}`,
     `<b>${copy(locale, "age")}</b> ${escapeHtml(`${age}`)}`,
+    "",
+    `<b>${copy(locale, "koreanProfiles")}</b>`,
+    renderKoreanProfiles(locale, mailbox.koreanProfiles ?? []),
     "",
     `<b>${copy(locale, "domain")}</b> ${escapeHtml(mailbox.domain)}`
   ].join("\n");
@@ -137,4 +184,38 @@ export function buildMailboxExpiredMessage(locale: SupportedLocale): string {
 
 export function buildWorkerErrorMessage(locale: SupportedLocale): string {
   return `<b>${copy(locale, "genericError")}</b>`;
+}
+
+export function buildHistoryMessage(
+  locale: SupportedLocale,
+  history: MailboxSession[],
+  currentEmail?: string
+): string {
+  if (history.length === 0) {
+    return `<b>${copy(locale, "historyTitle")}</b>\n\n${copy(locale, "historyEmpty")}`;
+  }
+
+  const lines = history.map((mailbox, index) => {
+    const current = mailbox.email === currentEmail ? ` <i>(${copy(locale, "historyCurrent")})</i>` : "";
+    return [
+      `${index + 1}. <code>${escapeHtml(mailbox.email)}</code>${current}`,
+      `  <b>${copy(locale, "historyCreated")}</b> ${escapeHtml(formatDateTime(mailbox.createdAt, locale))}`,
+      `  <b>${copy(locale, "historyUpdated")}</b> ${escapeHtml(formatDateTime(mailbox.updatedAt, locale))}`,
+      `  <b>${copy(locale, "domain")}</b> ${escapeHtml(mailbox.domain)}`
+    ].join("\n");
+  });
+
+  return [`<b>${copy(locale, "historyTitle")}</b>`, "", ...lines].join("\n\n");
+}
+
+export function buildRestoreQueuedMessage(locale: SupportedLocale, email: string): string {
+  return [
+    `<b>${copy(locale, "restoreQueued")}</b>`,
+    "",
+    `<code>${escapeHtml(email)}</code>`
+  ].join("\n");
+}
+
+export function buildRestoreMissingMessage(locale: SupportedLocale): string {
+  return `<b>${copy(locale, "restoreMissing")}</b>`;
 }

@@ -8,10 +8,12 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 - `/generate` untuk membuat email temporary dari `https://www.mailticking.com/`
 - `/refresh` untuk refresh inbox terbaru
 - `/inbox` untuk lihat daftar email subject + preview
+- `/history` untuk melihat riwayat email dan restore email lama
 - password saran acak 12 karakter, mudah dibaca, dengan huruf besar, huruf kecil, dan angka
 - nama rekomendasi + tanggal lahir acak dengan umur minimal 25 tahun
+- 5 rekomendasi profil Korea sintetis: nama, alamat, kota/kabupaten, dan kode pos
 - rate limit dan session per user
-- auto-expire data mailbox setelah 24 jam via Redis TTL
+- auto-expire data mailbox dan history setelah 30 hari via Redis TTL
 - ID/EN language toggle
 
 ## Arsitektur
@@ -129,7 +131,7 @@ curl -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook"
 - runtime production menggunakan `playwright-core` + `@sparticuz/chromium`
 - library `playwright` juga dipasang untuk local browser install dan config file
 - MailTicking dapat berubah sewaktu-waktu. Parser dibuat defensif, tapi jika markup endpoint berubah besar, update scraper mungkin tetap diperlukan
-- TTL Redis 24 jam menggantikan cron cleanup sehingga mailbox session akan terhapus otomatis
+- TTL Redis 30 hari menggantikan cron cleanup sehingga mailbox session dan history akan terhapus otomatis
 
 ## Phase 2 hooks yang sudah disiapkan
 

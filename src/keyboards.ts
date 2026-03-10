@@ -1,5 +1,5 @@
 import { InlineKeyboard } from "grammy";
-import type { SupportedLocale } from "./types.js";
+import type { MailboxSession, SupportedLocale } from "./types.js";
 
 const LABELS: Record<SupportedLocale, Record<string, string>> = {
   id: {
@@ -7,6 +7,7 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     regenerate: "Regenerate",
     refresh: "Refresh Inbox",
     inbox: "Lihat Inbox",
+    history: "Riwayat Email",
     language: "Bahasa",
     back: "Kembali",
     id: "Indonesia",
@@ -18,6 +19,7 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     regenerate: "Regenerate",
     refresh: "Refresh Inbox",
     inbox: "View Inbox",
+    history: "Email History",
     language: "Language",
     back: "Back",
     id: "Indonesia",
@@ -30,7 +32,15 @@ function label(locale: SupportedLocale, key: string): string {
   return LABELS[locale][key];
 }
 
-export function buildMainMenuKeyboard(locale: SupportedLocale, hasMailbox: boolean): InlineKeyboard {
+function shortenEmail(email: string, maxLength = 28): string {
+  if (email.length <= maxLength) {
+    return email;
+  }
+
+  return `${email.slice(0, maxLength - 3)}...`;
+}
+
+export function buildMainMenuKeyboard(locale: SupportedLocale, hasMailbox: boolean, hasHistory = hasMailbox): InlineKeyboard {
   const keyboard = new InlineKeyboard();
 
   keyboard.text(label(locale, hasMailbox ? "regenerate" : "generate"), "mt:generate");
@@ -38,6 +48,14 @@ export function buildMainMenuKeyboard(locale: SupportedLocale, hasMailbox: boole
   if (hasMailbox) {
     keyboard.text(label(locale, "refresh"), "mt:refresh").row();
     keyboard.text(label(locale, "inbox"), "mt:inbox");
+  }
+
+  if (hasHistory) {
+    if (hasMailbox) {
+      keyboard.text(label(locale, "history"), "mt:history");
+    } else {
+      keyboard.row().text(label(locale, "history"), "mt:history");
+    }
   }
 
   keyboard.row().text(label(locale, "language"), "mt:lang:open");
@@ -55,4 +73,20 @@ export function buildLanguageKeyboard(locale: SupportedLocale): InlineKeyboard {
     .text(`${locale === "en" ? "• " : ""}${label(locale, "en")}`, "mt:lang:set:en")
     .row()
     .text(label(locale, "back"), "mt:menu");
+}
+
+export function buildHistoryKeyboard(
+  locale: SupportedLocale,
+  history: MailboxSession[],
+  currentEmail?: string
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+
+  history.forEach((mailbox) => {
+    const prefix = mailbox.email === currentEmail ? "• " : "";
+    keyboard.text(`${prefix}${shortenEmail(mailbox.email)}`, `mt:restore:${mailbox.email}`).row();
+  });
+
+  keyboard.text(label(locale, "back"), "mt:menu");
+  return keyboard;
 }

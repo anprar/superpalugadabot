@@ -28,12 +28,20 @@ export interface IdentitySuggestion {
   birthDate: string;
 }
 
+export interface KoreaProfileSuggestion extends IdentitySuggestion {
+  addressLine: string;
+  city: string;
+  district: string;
+  postalCode: string;
+}
+
 export interface MailboxSession {
   email: string;
   code: string;
   domain: string;
   password: string;
   identity: IdentitySuggestion;
+  koreanProfiles: KoreaProfileSuggestion[];
   sourceUrl: string;
   createdAt: string;
   updatedAt: string;
@@ -55,6 +63,7 @@ export interface Phase2SurveyTask {
 export interface BotSessionData {
   __language_code?: SupportedLocale;
   mailbox?: MailboxSession;
+  mailboxHistory?: MailboxSession[];
   inboxCache?: InboxCache;
   pendingJob?: PendingJobState;
   phase2?: Phase2SurveyTask;

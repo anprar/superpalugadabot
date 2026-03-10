@@ -1,51 +1,76 @@
-import type { SupportedLocale } from "./types.js";
+import type { KoreaProfileSuggestion, SupportedLocale } from "./types.js";
 
 const EASY_CONSONANTS = ["b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "z"] as const;
 const EASY_VOWELS = ["a", "e", "i", "o", "u"] as const;
 const EASY_DIGITS = ["2", "3", "4", "5", "6", "7", "8", "9"] as const;
-const FIRST_NAMES = [
-  "Alya",
-  "Raka",
-  "Nadia",
-  "Dimas",
-  "Sinta",
-  "Rizky",
-  "Nabila",
-  "Farhan",
-  "Aurel",
-  "Rafli",
-  "Kayla",
-  "Fikri",
-  "Tiara",
-  "Bagas",
-  "Nadira",
-  "Galih",
-  "Citra",
-  "Arkan",
-  "Naura",
-  "Vino"
+const KOREAN_LAST_NAMES = ["Kim", "Lee", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon", "Jang", "Lim"] as const;
+const KOREAN_GIVEN_NAMES = [
+  "Minseo",
+  "Jiwoo",
+  "Seoyeon",
+  "Haneul",
+  "Yuna",
+  "Sujin",
+  "Jisoo",
+  "Minji",
+  "Jiho",
+  "Minho",
+  "Hyunwoo",
+  "Seojun",
+  "Taeyang",
+  "Donghyun",
+  "Jiwon",
+  "Eunji"
 ] as const;
-const LAST_NAMES = [
-  "Pratama",
-  "Saputra",
-  "Wijaya",
-  "Mahesa",
-  "Lestari",
-  "Permata",
-  "Ramadhan",
-  "Anjani",
-  "Putri",
-  "Kusuma",
-  "Firmansyah",
-  "Wibowo",
-  "Pangestu",
-  "Maharani",
-  "Nugraha",
-  "Adriansyah",
-  "Cahyani",
-  "Utami",
-  "Iskandar",
-  "Maulana"
+const KOREAN_REGIONS = [
+  {
+    city: "Seoul",
+    district: "Gangnam-gu",
+    roads: ["Teheran-ro", "Bongeunsa-ro", "Dosan-daero"],
+    postalCodes: ["06164", "06040", "06028"]
+  },
+  {
+    city: "Seoul",
+    district: "Mapo-gu",
+    roads: ["World Cup buk-ro", "Yanghwa-ro", "Donggyo-ro"],
+    postalCodes: ["03995", "04036", "03985"]
+  },
+  {
+    city: "Busan",
+    district: "Haeundae-gu",
+    roads: ["Haeundaehaebyeon-ro", "Centum nam-daero", "Apec-ro"],
+    postalCodes: ["48094", "48060", "48058"]
+  },
+  {
+    city: "Incheon",
+    district: "Yeonsu-gu",
+    roads: ["Convensia-daero", "Songdo gwahak-ro", "Harmony-ro"],
+    postalCodes: ["21998", "21984", "22002"]
+  },
+  {
+    city: "Daegu",
+    district: "Suseong-gu",
+    roads: ["Dongdaegu-ro", "Beomeo-cheon-ro", "Cheongsu-ro"],
+    postalCodes: ["42117", "42088", "42175"]
+  },
+  {
+    city: "Daejeon",
+    district: "Yuseong-gu",
+    roads: ["Expo-ro", "Daedeok-daero", "Techno jungang-ro"],
+    postalCodes: ["34125", "34141", "34014"]
+  },
+  {
+    city: "Gwangju",
+    district: "Seo-gu",
+    roads: ["Sangmu-daero", "Geumnam-ro", "Mudeung-ro"],
+    postalCodes: ["61963", "61949", "61918"]
+  },
+  {
+    city: "Suwon",
+    district: "Yeongtong-gu",
+    roads: ["Gwanggyo jungang-ro", "Deogyeong-daero", "Bandal-ro"],
+    postalCodes: ["16514", "16676", "16704"]
+  }
 ] as const;
 
 export function randomBetween(min: number, max: number): number {
@@ -88,10 +113,43 @@ export function buildReadablePassword(): string {
 }
 
 export function buildRecommendedName(): string {
-  const firstName = pickRandom(FIRST_NAMES);
-  const lastName = pickRandom(LAST_NAMES);
+  return buildKoreanName();
+}
 
-  return `${firstName} ${lastName}`;
+export function buildKoreanName(): string {
+  return `${pickRandom(KOREAN_LAST_NAMES)} ${pickRandom(KOREAN_GIVEN_NAMES)}`;
+}
+
+export function buildKoreanProfiles(count = 5): KoreaProfileSuggestion[] {
+  const profiles: KoreaProfileSuggestion[] = [];
+  const usedKeys = new Set<string>();
+
+  while (profiles.length < count) {
+    const region = pickRandom(KOREAN_REGIONS);
+    const road = pickRandom(region.roads);
+    const postalCode = pickRandom(region.postalCodes);
+    const buildingNumber = randomBetween(11, 187);
+    const unit = randomBetween(2, 28);
+    const floor = randomBetween(1, 24);
+    const profile: KoreaProfileSuggestion = {
+      fullName: buildKoreanName(),
+      birthDate: buildAdultBirthDate(25, 39),
+      addressLine: `${buildingNumber} ${road}, ${floor}-${unit}`,
+      city: region.city,
+      district: region.district,
+      postalCode
+    };
+    const key = `${profile.fullName}:${profile.addressLine}:${profile.postalCode}`;
+
+    if (usedKeys.has(key)) {
+      continue;
+    }
+
+    usedKeys.add(key);
+    profiles.push(profile);
+  }
+
+  return profiles;
 }
 
 export function buildAdultBirthDate(minAge = 25, maxAge = 39): string {
