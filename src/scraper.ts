@@ -5,17 +5,18 @@ import {
   MAX_INBOX_ITEMS,
   PLAYWRIGHT_DEFAULT_TIMEOUT_MS,
   PLAYWRIGHT_NAVIGATION_TIMEOUT_MS,
-  getProxyUrl
+  getProxyUrls
 } from "./config.js";
 import type {
   BrowserStorageState,
   InboxCache,
   InboxItem,
+  MailboxSession,
   ProxySettings,
   ScraperMailboxResult,
   ScraperRefreshResult
 } from "./types.js";
-import { buildReadablePassword, extractDomain, normalizeLine, pickRandom, randomDelay } from "./utils.js";
+import { buildAdultBirthDate, buildReadablePassword, buildRecommendedName, extractDomain, normalizeLine, pickRandom, randomDelay } from "./utils.js";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
@@ -30,17 +31,22 @@ class MailboxExpiredError extends Error {
   }
 }
 
-function parseProxyUrl(value?: string): ProxySettings | undefined {
-  if (!value) {
+function parseProxyUrl(values: string[]): ProxySettings | undefined {
+  if (!values.length) {
     return undefined;
   }
 
-  const parsed = new URL(value);
-  return {
-    server: `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`,
-    username: parsed.username || undefined,
-    password: parsed.password || undefined
-  };
+  const selected = pickRandom(values);
+  try {
+    const parsed = new URL(selected);
+    return {
+      server: `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`,
+      username: parsed.username || undefined,
+      password: parsed.password || undefined
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 async function createBrowserContext(storageState?: BrowserStorageState) {
@@ -48,7 +54,7 @@ async function createBrowserContext(storageState?: BrowserStorageState) {
     args: [...chromium.args, "--disable-blink-features=AutomationControlled"],
     executablePath: await chromium.executablePath(),
     headless: true,
-    proxy: parseProxyUrl(getProxyUrl()),
+    proxy: parseProxyUrl(getProxyUrls()),
     timeout: PLAYWRIGHT_DEFAULT_TIMEOUT_MS
   });
 
@@ -422,6 +428,10 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
         code: activeMailbox.code,
         domain,
         password: buildReadablePassword(),
+        identity: {
+          fullName: buildRecommendedName(),
+          birthDate: buildAdultBirthDate(25, 39)
+        },
         sourceUrl: MAILTICKING_URL,
         createdAt: now,
         updatedAt: now
@@ -435,7 +445,7 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
   }
 }
 
-export async function refreshInbox(existingMailbox: { email: string; code: string; password: string; createdAt: string }, storageState?: BrowserStorageState): Promise<ScraperRefreshResult> {
+export async function refreshInbox(existingMailbox: MailboxSession, storageState?: BrowserStorageState): Promise<ScraperRefreshResult> {
   const { browser, context } = await createBrowserContext(storageState);
 
   try {
@@ -485,6 +495,7 @@ export async function refreshInbox(existingMailbox: { email: string; code: strin
         code: activeMailbox.code,
         domain: extractDomain(activeMailbox.email),
         password: existingMailbox.password,
+        identity: existingMailbox.identity,
         sourceUrl: MAILTICKING_URL,
         createdAt: existingMailbox.createdAt,
         updatedAt: now

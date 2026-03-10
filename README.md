@@ -8,7 +8,8 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 - `/generate` untuk membuat email temporary dari `https://www.mailticking.com/`
 - `/refresh` untuk refresh inbox terbaru
 - `/inbox` untuk lihat daftar email subject + preview
-- password saran mudah dibaca seperti `Pagiinicerah.1`
+- password saran acak 12 karakter, mudah dibaca, dengan huruf besar, huruf kecil, dan angka
+- nama rekomendasi + tanggal lahir acak dengan umur minimal 25 tahun
 - rate limit dan session per user
 - auto-expire data mailbox setelah 24 jam via Redis TTL
 - ID/EN language toggle

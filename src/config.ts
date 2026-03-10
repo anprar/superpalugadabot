@@ -65,8 +65,12 @@ export function getPublicBaseUrl(): string {
   throw new Error("APP_BASE_URL or VERCEL_URL is required for QStash job routing");
 }
 
-export function getProxyUrl(): string | undefined {
-  return getEnv("PROXY_URL");
+export function getProxyUrls(): string[] {
+  const envValue = getEnv("PROXY_URL");
+  if (!envValue) {
+    return [];
+  }
+  return envValue.split(",").map(p => p.trim()).filter(Boolean);
 }
 
 export function getRedisConfig(): { url: string; token: string } {

@@ -1,16 +1,51 @@
 import type { SupportedLocale } from "./types.js";
 
-const PASSWORD_PHRASES = [
-  ["Pagi", "ini", "cerah"],
-  ["Kopi", "hangat", "manis"],
-  ["Langit", "biru", "jernih"],
-  ["Teh", "pagi", "tenang"],
-  ["Roti", "pagi", "gurih"],
-  ["Senja", "sore", "teduh"],
-  ["Bulan", "malam", "lembut"],
-  ["Hujan", "pagi", "sejuk"],
-  ["Bintang", "malam", "hening"],
-  ["Taman", "hijau", "damai"]
+const EASY_CONSONANTS = ["b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "z"] as const;
+const EASY_VOWELS = ["a", "e", "i", "o", "u"] as const;
+const EASY_DIGITS = ["2", "3", "4", "5", "6", "7", "8", "9"] as const;
+const FIRST_NAMES = [
+  "Alya",
+  "Raka",
+  "Nadia",
+  "Dimas",
+  "Sinta",
+  "Rizky",
+  "Nabila",
+  "Farhan",
+  "Aurel",
+  "Rafli",
+  "Kayla",
+  "Fikri",
+  "Tiara",
+  "Bagas",
+  "Nadira",
+  "Galih",
+  "Citra",
+  "Arkan",
+  "Naura",
+  "Vino"
+] as const;
+const LAST_NAMES = [
+  "Pratama",
+  "Saputra",
+  "Wijaya",
+  "Mahesa",
+  "Lestari",
+  "Permata",
+  "Ramadhan",
+  "Anjani",
+  "Putri",
+  "Kusuma",
+  "Firmansyah",
+  "Wibowo",
+  "Pangestu",
+  "Maharani",
+  "Nugraha",
+  "Adriansyah",
+  "Cahyani",
+  "Utami",
+  "Iskandar",
+  "Maulana"
 ] as const;
 
 export function randomBetween(min: number, max: number): number {
@@ -36,16 +71,76 @@ export function escapeHtml(value: string): string {
 }
 
 export function buildReadablePassword(): string {
-  const phrase = pickRandom(PASSWORD_PHRASES)
-    .map((part, index) => {
-      const normalized = part.toLowerCase();
-      return index === 0
-        ? normalized.charAt(0).toUpperCase() + normalized.slice(1)
-        : normalized;
-    })
-    .join("");
+  const buildWord = (): string => {
+    const word = [
+      pickRandom(EASY_CONSONANTS),
+      pickRandom(EASY_VOWELS),
+      pickRandom(EASY_CONSONANTS),
+      pickRandom(EASY_VOWELS),
+      pickRandom(EASY_CONSONANTS)
+    ].join("");
 
-  return `${phrase}.${randomBetween(1, 9)}`;
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  };
+
+  const digits = `${pickRandom(EASY_DIGITS)}${pickRandom(EASY_DIGITS)}`;
+  return `${buildWord()}${buildWord()}${digits}`;
+}
+
+export function buildRecommendedName(): string {
+  const firstName = pickRandom(FIRST_NAMES);
+  const lastName = pickRandom(LAST_NAMES);
+
+  return `${firstName} ${lastName}`;
+}
+
+export function buildAdultBirthDate(minAge = 25, maxAge = 39): string {
+  const today = new Date();
+  const latest = new Date(Date.UTC(today.getUTCFullYear() - minAge, today.getUTCMonth(), today.getUTCDate()));
+  const earliest = new Date(Date.UTC(today.getUTCFullYear() - maxAge, today.getUTCMonth(), today.getUTCDate()));
+  const span = latest.getTime() - earliest.getTime();
+  const selected = new Date(earliest.getTime() + Math.floor(Math.random() * (span + 1)));
+
+  return selected.toISOString().slice(0, 10);
+}
+
+export function getAgeYears(birthDate: string): number {
+  const [yearText, monthText, dayText] = birthDate.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!year || !month || !day) {
+    return 0;
+  }
+
+  const today = new Date();
+  let age = today.getUTCFullYear() - year;
+  const monthDelta = today.getUTCMonth() + 1 - month;
+  const dayDelta = today.getUTCDate() - day;
+
+  if (monthDelta < 0 || (monthDelta === 0 && dayDelta < 0)) {
+    age -= 1;
+  }
+
+  return age;
+}
+
+export function formatBirthDate(value: string, locale: SupportedLocale): string {
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toLocaleDateString(locale === "id" ? "id-ID" : "en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC"
+  });
 }
 
 export function formatDateTime(value: string, locale: SupportedLocale): string {

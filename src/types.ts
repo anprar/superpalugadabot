@@ -23,11 +23,17 @@ export interface InboxCache {
   source: InboxSource;
 }
 
+export interface IdentitySuggestion {
+  fullName: string;
+  birthDate: string;
+}
+
 export interface MailboxSession {
   email: string;
   code: string;
   domain: string;
   password: string;
+  identity: IdentitySuggestion;
   sourceUrl: string;
   createdAt: string;
   updatedAt: string;
