@@ -92,7 +92,84 @@ async function openMailTicking(page: Page): Promise<void> {
   await page.goto(MAILTICKING_URL, {
     waitUntil: "domcontentloaded"
   });
-  await randomDelay(600, 1_200);
+  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
+  await waitForCloudflareReady(page);
+  await randomDelay(800, 1_500);
+}
+
+async function hasCloudflareClearanceCookie(page: Page): Promise<boolean> {
+  const cookies = await page.context().cookies(MAILTICKING_URL);
+  return cookies.some((cookie) => cookie.name === "cf_clearance");
+}
+
+async function checkMailTickingSession(page: Page): Promise<boolean> {
+  try {
+    const result = await page.evaluate(async () => {
+      const response = await fetch("/member/check-login", {
+        method: "GET",
+        headers: {
+          Accept: "application/json"
+        },
+        credentials: "same-origin"
+      });
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const text = await response.text();
+      return text.includes("logged_in");
+    });
+
+    return result;
+  } catch {
+    return false;
+  }
+}
+
+async function getPageDebugSnapshot(page: Page): Promise<string> {
+  const title = await page.title().catch(() => "unknown");
+  const url = page.url();
+  const hasClearance = await hasCloudflareClearanceCookie(page).catch(() => false);
+  const bodyText = await page.textContent("body").catch(() => "");
+  const snippet = normalizeLine(bodyText?.slice(0, 220) ?? "", "unavailable");
+
+  return `title=${title}; url=${url}; cf_clearance=${hasClearance}; body=${snippet}`;
+}
+
+async function waitForCloudflareReady(page: Page, timeoutMs = 20_000): Promise<void> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const hasClearance = await hasCloudflareClearanceCookie(page).catch(() => false);
+    if (hasClearance) {
+      return;
+    }
+
+    const sessionReady = await checkMailTickingSession(page);
+    if (sessionReady) {
+      return;
+    }
+
+    await randomDelay(900, 1_500);
+    await page.waitForLoadState("networkidle", { timeout: 3_000 }).catch(() => undefined);
+  }
+
+  throw new Error(`Cloudflare clearance timeout: ${await getPageDebugSnapshot(page)}`);
+}
+
+async function recoverFromForbidden(page: Page, url: string, attempt: number): Promise<void> {
+  if (attempt >= 2) {
+    return;
+  }
+
+  await randomDelay(1_000, 1_800);
+  await page.goto(MAILTICKING_URL, {
+    waitUntil: "domcontentloaded"
+  });
+  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
+  await waitForCloudflareReady(page, 25_000);
+  await randomDelay(1_000, 1_800);
 }
 
 async function waitForActiveMailbox(page: Page, timeout = PLAYWRIGHT_DEFAULT_TIMEOUT_MS): Promise<{ email: string; code: string }> {
@@ -111,31 +188,49 @@ async function waitForActiveMailbox(page: Page, timeout = PLAYWRIGHT_DEFAULT_TIM
 }
 
 async function postJson(page: Page, url: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const payload = await page.evaluate(async ({ targetUrl, targetBody }) => {
-    const response = await fetch(targetUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json"
-      },
-      body: JSON.stringify(targetBody)
-    });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const payload = await page.evaluate(async ({ targetUrl, targetBody }) => {
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        credentials: "same-origin",
+        body: JSON.stringify(targetBody)
+      });
 
-    let responsePayload: unknown;
-    try {
-      responsePayload = await response.json();
-    } catch {
-      responsePayload = undefined;
+      const text = await response.text();
+      let responsePayload: unknown;
+      try {
+        responsePayload = JSON.parse(text);
+      } catch {
+        responsePayload = undefined;
+      }
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        text: text.slice(0, 300),
+        payload: responsePayload
+      };
+    }, { targetUrl: url, targetBody: body });
+
+    if (payload.ok) {
+      if (!payload.payload || typeof payload.payload !== "object") {
+        throw new Error(`MailTicking returned an invalid JSON payload for ${url}`);
+      }
+
+      return payload.payload as Record<string, unknown>;
     }
 
-    return {
-      ok: response.ok,
-      status: response.status,
-      payload: responsePayload
-    };
-  }, { targetUrl: url, targetBody: body });
+    if (payload.status === 403) {
+      await recoverFromForbidden(page, url, attempt);
+      if (attempt < 2) {
+        continue;
+      }
+    }
 
-  if (!payload.ok) {
     const responseBody = payload.payload && typeof payload.payload === "object"
       ? payload.payload as Record<string, unknown>
       : {};
@@ -143,15 +238,11 @@ async function postJson(page: Page, url: string, body: Record<string, unknown>):
       ? responseBody.error
       : typeof responseBody.message === "string"
         ? responseBody.message
-        : `status ${payload.status}`;
-    throw new Error(`MailTicking request failed for ${url}: ${detail}`);
+        : payload.text || `status ${payload.status}`;
+    throw new Error(`MailTicking request failed for ${url}: ${detail}; ${await getPageDebugSnapshot(page)}`);
   }
 
-  if (!payload.payload || typeof payload.payload !== "object") {
-    throw new Error(`MailTicking returned an invalid JSON payload for ${url}`);
-  }
-
-  return payload.payload as Record<string, unknown>;
+  throw new Error(`MailTicking request failed for ${url}: exhausted retries`);
 }
 
 async function generatePublicMailbox(page: Page): Promise<string> {
