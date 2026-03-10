@@ -120,36 +120,22 @@ export function buildKoreanName(): string {
   return `${pickRandom(KOREAN_LAST_NAMES)} ${pickRandom(KOREAN_GIVEN_NAMES)}`;
 }
 
-export function buildKoreanProfiles(count = 5): KoreaProfileSuggestion[] {
-  const profiles: KoreaProfileSuggestion[] = [];
-  const usedKeys = new Set<string>();
+export function buildKoreanProfile(): KoreaProfileSuggestion {
+  const region = pickRandom(KOREAN_REGIONS);
+  const road = pickRandom(region.roads);
+  const postalCode = pickRandom(region.postalCodes);
+  const buildingNumber = randomBetween(11, 187);
+  const unit = randomBetween(2, 28);
+  const floor = randomBetween(1, 24);
 
-  while (profiles.length < count) {
-    const region = pickRandom(KOREAN_REGIONS);
-    const road = pickRandom(region.roads);
-    const postalCode = pickRandom(region.postalCodes);
-    const buildingNumber = randomBetween(11, 187);
-    const unit = randomBetween(2, 28);
-    const floor = randomBetween(1, 24);
-    const profile: KoreaProfileSuggestion = {
-      fullName: buildKoreanName(),
-      birthDate: buildAdultBirthDate(25, 39),
-      addressLine: `${buildingNumber} ${road}, ${floor}-${unit}`,
-      city: region.city,
-      district: region.district,
-      postalCode
-    };
-    const key = `${profile.fullName}:${profile.addressLine}:${profile.postalCode}`;
-
-    if (usedKeys.has(key)) {
-      continue;
-    }
-
-    usedKeys.add(key);
-    profiles.push(profile);
-  }
-
-  return profiles;
+  return {
+    fullName: buildKoreanName(),
+    birthDate: buildAdultBirthDate(25, 39),
+    addressLine: `${buildingNumber} ${road}, ${floor}-${unit}`,
+    city: region.city,
+    district: region.district,
+    postalCode
+  };
 }
 
 export function buildAdultBirthDate(minAge = 25, maxAge = 39): string {
@@ -234,4 +220,46 @@ export function normalizeLine(value: unknown, fallback: string): string {
 export function extractDomain(email: string): string {
   const [, domain = ""] = email.split("@");
   return domain.toLowerCase();
+}
+
+export function generateLuhnCard(bin: string, length = 16): string {
+  let numberString = bin;
+  while (numberString.length < length - 1) {
+    numberString += randomBetween(0, 9).toString();
+  }
+
+  let sum = 0;
+  let isEven = false;
+  for (let i = numberString.length - 1; i >= 0; i--) {
+    let digit = parseInt(numberString.charAt(i), 10);
+    if (isEven) {
+      digit *= 2;
+      if (digit > 9) {
+        digit -= 9;
+      }
+    }
+    sum += digit;
+    isEven = !isEven;
+  }
+
+  const checkDigit = (10 - (sum % 10)) % 10;
+  return numberString + checkDigit.toString();
+}
+
+export function generateVirtualCards(bin: string, count: number) {
+  const cards = [];
+  const currentYear = new Date().getFullYear();
+
+  for (let i = 0; i < count; i++) {
+    const number = generateLuhnCard(bin);
+    // Expiry: Random month (01-12) and random year (current to +4 years)
+    const month = randomBetween(1, 12).toString().padStart(2, "0");
+    const year = randomBetween(currentYear + 1, currentYear + 5).toString();
+    const expiry = `${month}/${year}`;
+    // CVV: 3 random digits
+    const cvv = randomBetween(100, 999).toString();
+
+    cards.push({ number, expiry, cvv });
+  }
+  return cards;
 }

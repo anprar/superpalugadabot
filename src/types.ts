@@ -35,13 +35,21 @@ export interface KoreaProfileSuggestion extends IdentitySuggestion {
   postalCode: string;
 }
 
+export interface VirtualCard {
+  number: string;
+  expiry: string;
+  cvv: string;
+}
+
 export interface MailboxSession {
   email: string;
   code: string;
   domain: string;
   password: string;
-  identity: IdentitySuggestion;
-  koreanProfiles: KoreaProfileSuggestion[];
+  koreanProfile?: KoreaProfileSuggestion;
+  identity?: IdentitySuggestion;
+  koreanProfiles?: KoreaProfileSuggestion[];
+  virtualCards?: VirtualCard[];
   sourceUrl: string;
   createdAt: string;
   updatedAt: string;

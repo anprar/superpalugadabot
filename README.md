@@ -8,10 +8,10 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 - `/generate` untuk membuat email temporary dari `https://www.mailticking.com/`
 - `/refresh` untuk refresh inbox terbaru
 - `/inbox` untuk lihat daftar email subject + preview
-- `/history` untuk melihat riwayat email dan restore email lama
+- `/history` untuk melihat riwayat email, restore email lama, dan hapus entry yang dipilih
 - password saran acak 12 karakter, mudah dibaca, dengan huruf besar, huruf kecil, dan angka
 - nama rekomendasi + tanggal lahir acak dengan umur minimal 25 tahun
-- 5 rekomendasi profil Korea sintetis: nama, alamat, kota/kabupaten, dan kode pos
+- 1 profil Korea sintetis tersimpan: nama, tanggal lahir, alamat, kota/kabupaten, dan kode pos
 - rate limit dan session per user
 - auto-expire data mailbox dan history setelah 30 hari via Redis TTL
 - ID/EN language toggle

@@ -8,6 +8,9 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     refresh: "Refresh Inbox",
     inbox: "Lihat Inbox",
     history: "Riwayat Email",
+    restore: "Restore",
+    delete: "Hapus",
+    current: "Aktif",
     language: "Bahasa",
     back: "Kembali",
     id: "Indonesia",
@@ -20,6 +23,9 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     refresh: "Refresh Inbox",
     inbox: "View Inbox",
     history: "Email History",
+    restore: "Restore",
+    delete: "Delete",
+    current: "Current",
     language: "Language",
     back: "Back",
     id: "Indonesia",
@@ -82,9 +88,19 @@ export function buildHistoryKeyboard(
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
 
-  history.forEach((mailbox) => {
+  history.forEach((mailbox, index) => {
     const prefix = mailbox.email === currentEmail ? "• " : "";
-    keyboard.text(`${prefix}${shortenEmail(mailbox.email)}`, `mt:restore:${mailbox.email}`).row();
+    const title = `${prefix}${shortenEmail(mailbox.email)}`;
+
+    if (mailbox.email === currentEmail) {
+      keyboard.text(title, "mt:noop").text(label(locale, "current"), "mt:noop").row();
+      return;
+    }
+
+    keyboard
+      .text(title, `mt:restore:i:${index}`)
+      .text(label(locale, "delete"), `mt:delete:i:${index}`)
+      .row();
   });
 
   keyboard.text(label(locale, "back"), "mt:menu");

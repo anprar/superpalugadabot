@@ -4,10 +4,18 @@ import { limit } from "@grammyjs/ratelimiter";
 import { Bot, session } from "grammy";
 import { getBotToken, getSupportedLocale } from "./config.js";
 import { buildHistoryKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard } from "./keyboards.js";
-import { buildHistoryMessage, buildInboxMessage, buildRestoreMissingMessage, buildRestoreQueuedMessage } from "./messages.js";
+import {
+  buildDeleteCurrentHistoryMessage,
+  buildDeleteHistoryDoneMessage,
+  buildDeleteHistoryMissingMessage,
+  buildHistoryMessage,
+  buildInboxMessage,
+  buildRestoreMissingMessage,
+  buildRestoreQueuedMessage
+} from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
-import { clearBrowserState, createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
-import type { BotContext, MailJobType, SupportedLocale } from "./types.js";
+import { clearBrowserState, createInitialSessionData, createSessionStorage, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
+import type { BotContext, MailJobType, MailboxSession, SupportedLocale } from "./types.js";
 
 type GlobalBotCache = typeof globalThis & { __mailTickingBot?: Bot<BotContext> };
 
@@ -42,6 +50,10 @@ function buildStartText(ctx: BotContext): string {
 
 function hasHistory(ctx: BotContext): boolean {
   return Boolean(ctx.session.mailboxHistory?.length);
+}
+
+function getHistoryItemByIndex(ctx: BotContext, index: number): MailboxSession | undefined {
+  return Number.isInteger(index) && index >= 0 ? ctx.session.mailboxHistory?.[index] : undefined;
 }
 
 async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
@@ -104,13 +116,13 @@ async function showHistory(ctx: BotContext): Promise<void> {
   });
 }
 
-async function restoreMailbox(ctx: BotContext, email: string): Promise<void> {
+async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
   if (!ctx.chat || !ctx.from) {
     return;
   }
 
   const locale = getLocaleFromContext(ctx);
-  const selected = findMailboxInHistory(ctx.session.mailboxHistory, email);
+  const selected = getHistoryItemByIndex(ctx, index);
   if (!selected) {
     await ctx.reply(buildRestoreMissingMessage(locale), {
       parse_mode: "HTML",
@@ -150,6 +162,49 @@ async function restoreMailbox(ctx: BotContext, email: string): Promise<void> {
       reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
     });
   }
+}
+
+async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void> {
+  const locale = getLocaleFromContext(ctx);
+  const selected = getHistoryItemByIndex(ctx, index);
+
+  if (!selected) {
+    await ctx.answerCallbackQuery({ text: locale === "id" ? "History tidak ditemukan" : "History entry not found" });
+    await ctx.reply(buildDeleteHistoryMissingMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+    });
+    return;
+  }
+
+  if (selected.email === ctx.session.mailbox?.email) {
+    await ctx.answerCallbackQuery({ text: locale === "id" ? "Email aktif tidak bisa dihapus" : "Active email cannot be deleted" });
+    await ctx.reply(buildDeleteCurrentHistoryMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+    });
+    return;
+  }
+
+  const nextHistory = (ctx.session.mailboxHistory ?? []).filter((_, historyIndex) => historyIndex !== index);
+  if (ctx.chat) {
+    await patchChatSession(ctx.chat.id, (current) => ({
+      ...current,
+      mailboxHistory: nextHistory
+    }));
+  }
+
+  ctx.session.mailboxHistory = nextHistory;
+
+  await ctx.answerCallbackQuery({ text: locale === "id" ? "History dihapus" : "History deleted" });
+  await ctx.editMessageText(buildHistoryMessage(locale, nextHistory, ctx.session.mailbox?.email), {
+    parse_mode: "HTML",
+    reply_markup: buildHistoryKeyboard(locale, nextHistory, ctx.session.mailbox?.email)
+  });
+  await ctx.reply(buildDeleteHistoryDoneMessage(locale), {
+    parse_mode: "HTML",
+    reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+  });
 }
 
 function createI18n(): I18n<BotContext> {
@@ -242,9 +297,13 @@ function createBot(): Bot<BotContext> {
     await showHistory(ctx);
   });
 
-  bot.callbackQuery(/^mt:restore:(.+)$/, async (ctx) => {
+  bot.callbackQuery(/^mt:restore:i:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    await restoreMailbox(ctx, ctx.match[1]);
+    await restoreMailbox(ctx, Number(ctx.match[1]));
+  });
+
+  bot.callbackQuery(/^mt:delete:i:(\d+)$/, async (ctx) => {
+    await deleteHistoryEntry(ctx, Number(ctx.match[1]));
   });
 
   bot.callbackQuery("mt:lang:open", async (ctx) => {

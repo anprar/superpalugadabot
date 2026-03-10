@@ -16,7 +16,7 @@ import type {
   ScraperMailboxResult,
   ScraperRefreshResult
 } from "./types.js";
-import { buildAdultBirthDate, buildKoreanProfiles, buildReadablePassword, buildRecommendedName, extractDomain, normalizeLine, pickRandom, randomDelay } from "./utils.js";
+import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, normalizeLine, pickRandom, randomDelay } from "./utils.js";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
@@ -421,7 +421,7 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
     const storageState = await context.storageState();
     const now = new Date().toISOString();
     const domain = extractDomain(activeMailbox.email);
-    const koreanProfiles = buildKoreanProfiles(5);
+    const koreanProfile = buildKoreanProfile();
 
     return {
       mailbox: {
@@ -429,11 +429,12 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
         code: activeMailbox.code,
         domain,
         password: buildReadablePassword(),
+        koreanProfile,
         identity: {
-          fullName: koreanProfiles[0]?.fullName ?? buildRecommendedName(),
-          birthDate: koreanProfiles[0]?.birthDate ?? buildAdultBirthDate(25, 39)
+          fullName: koreanProfile.fullName ?? buildRecommendedName(),
+          birthDate: koreanProfile.birthDate ?? buildAdultBirthDate(25, 39)
         },
-        koreanProfiles,
+        virtualCards: generateVirtualCards("625814260", 5),
         sourceUrl: MAILTICKING_URL,
         createdAt: now,
         updatedAt: now
@@ -488,12 +489,18 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
       : domItems.length > 0
         ? "dom"
         : "json";
-    const koreanProfiles = existingMailbox.koreanProfiles?.length ? existingMailbox.koreanProfiles : buildKoreanProfiles(5);
+    const koreanProfile = existingMailbox.koreanProfile
+      ?? existingMailbox.koreanProfiles?.[0]
+      ?? {
+        ...buildKoreanProfile(),
+        fullName: existingMailbox.identity?.fullName ?? buildRecommendedName(),
+        birthDate: existingMailbox.identity?.birthDate ?? buildAdultBirthDate(25, 39)
+      };
     const identity = existingMailbox.identity?.fullName && existingMailbox.identity?.birthDate
       ? existingMailbox.identity
       : {
-          fullName: koreanProfiles[0]?.fullName ?? buildRecommendedName(),
-          birthDate: koreanProfiles[0]?.birthDate ?? buildAdultBirthDate(25, 39)
+          fullName: koreanProfile.fullName,
+          birthDate: koreanProfile.birthDate
         };
 
     const nextStorageState = await context.storageState();
@@ -504,8 +511,9 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
         code: activeMailbox.code,
         domain: extractDomain(activeMailbox.email),
         password: existingMailbox.password,
+        koreanProfile,
         identity,
-        koreanProfiles,
+        virtualCards: existingMailbox.virtualCards ?? generateVirtualCards("625814260", 5),
         sourceUrl: MAILTICKING_URL,
         createdAt: existingMailbox.createdAt,
         updatedAt: now
