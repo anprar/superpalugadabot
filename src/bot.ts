@@ -3,7 +3,7 @@ import { I18n } from "@grammyjs/i18n";
 import { limit } from "@grammyjs/ratelimiter";
 import { Bot, session } from "grammy";
 import { getBotToken, getSupportedLocale } from "./config.js";
-import { buildMainMenuKeyboard, buildLanguageKeyboard } from "./keyboards.js";
+import { buildMainMenuKeyboard, buildLanguageKeyboard, buildProcessingKeyboard } from "./keyboards.js";
 import { buildInboxMessage } from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
 import { createInitialSessionData, createSessionStorage, getRedisClient } from "./sessions.js";
@@ -70,7 +70,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
   }
 
   await ctx.reply(queueAcceptedCopy(locale, type), {
-    reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox))
+    reply_markup: buildProcessingKeyboard(locale)
   });
 }
 
@@ -194,6 +194,13 @@ function createBot(): Bot<BotContext> {
     await ctx.reply(buildStartText(ctx), {
       reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox))
     });
+  });
+
+  bot.callbackQuery("mt:noop", async (ctx) => {
+    const locale = getLocaleFromContext(ctx);
+    await ctx.answerCallbackQuery(
+      locale === "id" ? "Masih diproses, mohon tunggu..." : "Still processing, please wait..."
+    );
   });
 
   bot.catch((error) => {

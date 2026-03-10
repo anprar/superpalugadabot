@@ -10,7 +10,8 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     language: "Bahasa",
     back: "Kembali",
     id: "Indonesia",
-    en: "English"
+    en: "English",
+    processing: "⏳ Sedang diproses..."
   },
   en: {
     generate: "Generate Email",
@@ -20,7 +21,8 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     language: "Language",
     back: "Back",
     id: "Indonesia",
-    en: "English"
+    en: "English",
+    processing: "⏳ Processing..."
   }
 };
 
@@ -40,6 +42,11 @@ export function buildMainMenuKeyboard(locale: SupportedLocale, hasMailbox: boole
 
   keyboard.row().text(label(locale, "language"), "mt:lang:open");
   return keyboard;
+}
+
+export function buildProcessingKeyboard(locale: SupportedLocale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(label(locale, "processing"), "mt:noop");
 }
 
 export function buildLanguageKeyboard(locale: SupportedLocale): InlineKeyboard {

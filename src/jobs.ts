@@ -36,7 +36,9 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
   const locale = session.__language_code ?? payload.locale;
 
   try {
-    await getBot().api.sendChatAction(payload.chatId, "typing");
+    const bot = getBot();
+    await bot.init();
+    await bot.api.sendChatAction(payload.chatId, "typing");
 
     if (payload.type === "generate") {
       const previousBrowserState = await getBrowserState<BrowserStorageState>(payload.chatId);
