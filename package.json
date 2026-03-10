@@ -1,0 +1,30 @@
+{
+  "name": "mailticking-telegram-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "dev": "vercel dev",
+    "playwright:install": "playwright install chromium",
+    "vercel-build": "npm run build"
+  },
+  "dependencies": {
+    "@grammyjs/i18n": "1.1.2",
+    "@grammyjs/ratelimiter": "1.2.1",
+    "@sparticuz/chromium": "143.0.4",
+    "@upstash/qstash": "2.9.0",
+    "@upstash/redis": "1.36.4",
+    "grammy": "1.41.1",
+    "playwright-core": "1.58.2"
+  },
+  "devDependencies": {
+    "@types/node": "25.4.0",
+    "playwright": "1.58.2",
+    "typescript": "5.9.3"
+  }
+}

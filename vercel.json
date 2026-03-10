@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "api/telegram.ts": {
+      "memory": 512,
+      "maxDuration": 10
+    },
+    "api/jobs/mailticking.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}
