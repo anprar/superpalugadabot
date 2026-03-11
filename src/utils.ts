@@ -224,7 +224,7 @@ export function generateLuhnCard(bin: string, length = 16): string {
   }
 
   let sum = 0;
-  let isEven = false;
+  let isEven = true;
   for (let i = numberString.length - 1; i >= 0; i--) {
     let digit = parseInt(numberString.charAt(i), 10);
     if (isEven) {

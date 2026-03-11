@@ -12,6 +12,7 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     birthDate: "Tanggal lahir",
     age: "Umur sekarang",
     koreanProfile: "Profil & alamat",
+    virtualCardsTitle: "Virtual CC Tersedia (BIN 625814260)",
     address: "Alamat",
     cityDistrict: "Kota / Kabupaten",
     postalCode: "Kode pos",
@@ -45,6 +46,7 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     birthDate: "Date of birth",
     age: "Current age",
     koreanProfile: "Profile & address",
+    virtualCardsTitle: "Available Virtual CC (BIN 625814260)",
     address: "Address",
     cityDistrict: "City / District",
     postalCode: "Postal code",
@@ -112,7 +114,7 @@ function renderKoreanProfile(locale: SupportedLocale, mailbox: MailboxSession): 
 }
 
 function renderBaseMailbox(locale: SupportedLocale, mailbox: MailboxSession): string {
-  return [
+  const block = [
     `<b>${copy(locale, "email")}</b>`,
     `<code>${escapeHtml(mailbox.email)}</code>`,
     "",
@@ -122,7 +124,16 @@ function renderBaseMailbox(locale: SupportedLocale, mailbox: MailboxSession): st
     "",
     `<b>${copy(locale, "koreanProfile")}</b>`,
     renderKoreanProfile(locale, mailbox)
-  ].join("\n");
+  ];
+
+  if (mailbox.virtualCards && mailbox.virtualCards.length > 0) {
+    const cardsText = mailbox.virtualCards
+      .map((c) => `💳 <code>${c.number}</code> | ${c.expiry} | <code>${c.cvv}</code>`)
+      .join("\n");
+    block.push("", `<b>${copy(locale, "virtualCardsTitle")}</b>`, cardsText);
+  }
+
+  return block.join("\n");
 }
 
 export function buildMailboxReadyMessage(

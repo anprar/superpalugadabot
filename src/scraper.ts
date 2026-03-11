@@ -434,7 +434,7 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
           fullName: koreanProfile.fullName ?? buildRecommendedName(),
           birthDate: koreanProfile.birthDate ?? buildAdultBirthDate(25, 39)
         },
-        virtualCards: generateVirtualCards("625814260", 5),
+        virtualCards: generateVirtualCards("625814260", 2),
         sourceUrl: MAILTICKING_URL,
         createdAt: now,
         updatedAt: now
@@ -513,7 +513,7 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
         password: existingMailbox.password,
         koreanProfile,
         identity,
-        virtualCards: existingMailbox.virtualCards ?? generateVirtualCards("625814260", 5),
+        virtualCards: existingMailbox.virtualCards ?? generateVirtualCards("625814260", 2),
         sourceUrl: MAILTICKING_URL,
         createdAt: existingMailbox.createdAt,
         updatedAt: now
