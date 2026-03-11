@@ -387,7 +387,7 @@ async function parseInboxFromDom(page: Page): Promise<InboxItem[]> {
           isUnread: row.classList.contains("unread")
         };
       })
-      .filter((item) => item.subject || item.preview || item.sender);
+      .filter((item) => Boolean(item.detailUrl) && (item.subject || item.preview || item.sender));
   }, MAX_INBOX_ITEMS);
 
   return items.map((item) => ({
@@ -434,7 +434,7 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
           fullName: koreanProfile.fullName ?? buildRecommendedName(),
           birthDate: koreanProfile.birthDate ?? buildAdultBirthDate(25, 39)
         },
-        virtualCards: generateVirtualCards("625814260", 2),
+        virtualCards: generateVirtualCards("625814260", 1),
         sourceUrl: MAILTICKING_URL,
         createdAt: now,
         updatedAt: now
@@ -513,7 +513,7 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
         password: existingMailbox.password,
         koreanProfile,
         identity,
-        virtualCards: existingMailbox.virtualCards ?? generateVirtualCards("625814260", 2),
+        virtualCards: existingMailbox.virtualCards ?? generateVirtualCards("625814260", 1),
         sourceUrl: MAILTICKING_URL,
         createdAt: existingMailbox.createdAt,
         updatedAt: now
