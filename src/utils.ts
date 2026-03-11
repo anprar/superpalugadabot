@@ -178,13 +178,8 @@ export function formatBirthDate(value: string, locale: SupportedLocale): string 
     return value;
   }
 
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.toLocaleDateString(locale === "id" ? "id-ID" : "en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC"
-  });
+  void locale;
+  return `${day.toString().padStart(2, "0")}-${month.toString().padStart(2, "0")}-${year.toString().padStart(4, "0")}`;
 }
 
 export function formatDateTime(value: string, locale: SupportedLocale): string {

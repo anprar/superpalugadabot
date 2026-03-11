@@ -26,12 +26,12 @@ function getLocaleFromContext(ctx: BotContext): SupportedLocale {
 function queueAcceptedCopy(locale: SupportedLocale, type: MailJobType): string {
   const copy = {
     id: {
-      generate: "Sedang membuat email MailTicking baru. Tunggu sebentar...",
-      refresh: "Sedang refresh inbox MailTicking. Tunggu sebentar..."
+      generate: "Sedang menyiapkan data baru. Tunggu sebentar...",
+      refresh: "Sedang memperbarui inbox aktif. Tunggu sebentar..."
     },
     en: {
-      generate: "Creating a fresh MailTicking mailbox. Please wait...",
-      refresh: "Refreshing the MailTicking inbox. Please wait..."
+      generate: "Preparing fresh data now. Please wait...",
+      refresh: "Updating the active inbox now. Please wait..."
     }
   } as const;
 
