@@ -56,6 +56,13 @@ function clearPendingJob(payload: MailJobPayload) {
 export async function runMailJob(payload: MailJobPayload): Promise<void> {
   const session = await getChatSession(payload.chatId);
   const locale = session.__language_code ?? payload.locale;
+  const startedAt = Date.now();
+
+  console.info("mail-job-start", {
+    chatId: payload.chatId,
+    type: payload.type,
+    requestedAt: payload.requestedAt
+  });
 
   try {
     const bot = getBot();
@@ -74,6 +81,11 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
         Boolean(nextSession.mailboxHistory?.length),
         Boolean(result.mailbox.note)
       );
+      console.info("mail-job-success", {
+        chatId: payload.chatId,
+        type: payload.type,
+        durationMs: Date.now() - startedAt
+      });
       return;
     }
 
@@ -92,6 +104,11 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
       Boolean(nextSession.mailboxHistory?.length),
       Boolean(refreshed.mailbox.note)
     );
+    console.info("mail-job-success", {
+      chatId: payload.chatId,
+      type: payload.type,
+      durationMs: Date.now() - startedAt
+    });
   } catch (error) {
     if (error instanceof MailboxExpiredError) {
       await clearMailboxState(payload.chatId);
@@ -115,7 +132,12 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
       return;
     }
 
-    console.error("mail-job-error", toLoggableError(error));
+    console.error("mail-job-error", {
+      chatId: payload.chatId,
+      type: payload.type,
+      durationMs: Date.now() - startedAt,
+      error: toLoggableError(error)
+    });
     await getBot().api.sendMessage(payload.chatId, buildWorkerErrorMessage(locale), {
       parse_mode: "HTML",
       reply_markup: buildMainMenuKeyboard(

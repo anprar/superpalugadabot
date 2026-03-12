@@ -22,7 +22,7 @@ import {
   buildRestoreQueuedMessage
 } from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
-import { clearBrowserState, createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
+import { createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
 import type { BotContext, MailJobType, MailboxSession, SupportedLocale } from "./types.js";
 import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isValidEmailAddress, normalizeEmailAddress } from "./utils.js";
 
@@ -188,7 +188,6 @@ async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
   const importedMailbox = buildImportedMailbox(email, existingMailbox);
   const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, importedMailbox);
 
-  await clearBrowserState(ctx.chat.id);
   await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: importedMailbox,
@@ -391,7 +390,6 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
   }
 
   const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, selected);
-  await clearBrowserState(ctx.chat.id);
   await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: selected,

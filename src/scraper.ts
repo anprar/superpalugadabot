@@ -493,32 +493,23 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
         throw new MailboxExpiredError();
       }
     }
-
-    await randomDelay(800, 1_500);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
-
-    await page.waitForResponse(
-      (res) => res.url().includes("/get-emails") && res.status() === 200,
-      { timeout: 2_500 }
-    ).catch(() => undefined);
-    
-    // extra delay for DOM to render after ajax
-    await randomDelay(300, 600);
-
-    const domItems = await parseInboxFromDom(page);
     const jsonItems = normalizeInboxFromJson(payload);
-    const items = domItems.length > 0 && jsonItems.length > 0
-      ? domItems
-      : domItems.length > 0
-        ? domItems
-        : jsonItems;
+    let domItems: InboxItem[] = [];
 
-    const source = domItems.length > 0 && jsonItems.length > 0
-      ? "mixed"
-      : domItems.length > 0
-        ? "dom"
-        : "json";
+    if (jsonItems.length === 0) {
+      await randomDelay(150, 300);
+      domItems = await parseInboxFromDom(page);
+
+      if (domItems.length === 0) {
+        await page.reload({ waitUntil: "domcontentloaded" });
+        activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
+        await randomDelay(150, 300);
+        domItems = await parseInboxFromDom(page);
+      }
+    }
+
+    const items = jsonItems.length > 0 ? jsonItems : domItems;
+    const source = jsonItems.length > 0 ? "json" : "dom";
     const koreanProfile = existingMailbox.koreanProfile
       ?? existingMailbox.koreanProfiles?.[0]
       ?? {
