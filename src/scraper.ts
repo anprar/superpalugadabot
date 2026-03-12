@@ -322,11 +322,17 @@ function normalizeInboxFromJson(payload: unknown): InboxItem[] {
   }
 
   const record = payload as Record<string, unknown>;
-  const emails = Array.isArray(record.emails)
-    ? record.emails
-    : Array.isArray(record.data)
-      ? record.data
-      : [];
+  const emails = Array.isArray(payload)
+    ? payload
+    : Array.isArray(record.emails)
+      ? record.emails
+      : Array.isArray(record.data)
+        ? record.data
+        : Array.isArray(record.messages)
+          ? record.messages
+          : Array.isArray(record.list)
+            ? record.list
+            : [];
 
   const items: InboxItem[] = [];
 
@@ -490,6 +496,14 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
     await randomDelay(800, 1_500);
     await page.reload({ waitUntil: "domcontentloaded" });
     activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
+
+    await page.waitForResponse(
+      (res) => res.url().includes("/get-emails") && res.status() === 200,
+      { timeout: 2_500 }
+    ).catch(() => undefined);
+    
+    // extra delay for DOM to render after ajax
+    await randomDelay(300, 600);
 
     const domItems = await parseInboxFromDom(page);
     const jsonItems = normalizeInboxFromJson(payload);
