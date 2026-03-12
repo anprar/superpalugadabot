@@ -6,6 +6,9 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     generate: "Generate Email",
     regenerate: "Regenerate",
     import: "Input Email",
+    addNote: "Tambah Catatan",
+    editNote: "Ubah Catatan",
+    deleteNote: "Hapus Catatan",
     refresh: "Refresh Inbox",
     inbox: "Lihat Inbox",
     history: "Riwayat Email",
@@ -22,6 +25,9 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     generate: "Generate Email",
     regenerate: "Regenerate",
     import: "Add Email",
+    addNote: "Add Note",
+    editNote: "Edit Note",
+    deleteNote: "Delete Note",
     refresh: "Refresh Inbox",
     inbox: "View Inbox",
     history: "Email History",
@@ -48,7 +54,12 @@ function shortenEmail(email: string, maxLength = 28): string {
   return `${email.slice(0, maxLength - 3)}...`;
 }
 
-export function buildMainMenuKeyboard(locale: SupportedLocale, hasMailbox: boolean, hasHistory = hasMailbox): InlineKeyboard {
+export function buildMainMenuKeyboard(
+  locale: SupportedLocale,
+  hasMailbox: boolean,
+  hasHistory = hasMailbox,
+  hasNote = false
+): InlineKeyboard {
   const keyboard = new InlineKeyboard();
 
   keyboard
@@ -57,15 +68,18 @@ export function buildMainMenuKeyboard(locale: SupportedLocale, hasMailbox: boole
 
   if (hasMailbox) {
     keyboard.row().text(label(locale, "refresh"), "mt:refresh");
-    keyboard.text(label(locale, "inbox"), "mt:inbox");
+    keyboard
+      .row()
+      .text(label(locale, "inbox"), "mt:inbox")
+      .text(label(locale, hasNote ? "editNote" : "addNote"), "mt:note:open");
+
+    if (hasNote) {
+      keyboard.row().text(label(locale, "deleteNote"), "mt:note:delete");
+    }
   }
 
   if (hasHistory) {
-    if (hasMailbox) {
-      keyboard.text(label(locale, "history"), "mt:history");
-    } else {
-      keyboard.row().text(label(locale, "history"), "mt:history");
-    }
+    keyboard.row().text(label(locale, "history"), "mt:history");
   }
 
   keyboard.row().text(label(locale, "language"), "mt:lang:open");

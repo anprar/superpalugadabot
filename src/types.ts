@@ -5,7 +5,7 @@ import type { BrowserContext } from "playwright-core";
 export type SupportedLocale = "id" | "en";
 export type MailJobType = "generate" | "refresh";
 export type InboxSource = "dom" | "json" | "mixed";
-export type PendingTextInputType = "import-email";
+export type PendingTextInputType = "import-email" | "mailbox-note";
 export type MailboxOrigin = "generated" | "imported";
 export type BrowserStorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 
@@ -48,6 +48,7 @@ export interface MailboxSession {
   code: string;
   domain: string;
   origin?: MailboxOrigin;
+  note?: string;
   password: string;
   koreanProfile?: KoreaProfileSuggestion;
   identity?: IdentitySuggestion;

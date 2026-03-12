@@ -37,11 +37,12 @@ async function sendResultMessage(
   locale: MailJobPayload["locale"],
   text: string,
   hasMailbox: boolean,
-  hasHistory: boolean
+  hasHistory: boolean,
+  hasNote = false
 ): Promise<void> {
   await getBot().api.sendMessage(chatId, text, {
     parse_mode: "HTML",
-    reply_markup: buildMainMenuKeyboard(locale, hasMailbox, hasHistory)
+    reply_markup: buildMainMenuKeyboard(locale, hasMailbox, hasHistory, hasNote)
   });
 }
 
@@ -70,7 +71,8 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
         locale,
         buildMailboxReadyMessage(locale, result.mailbox, result.inboxCache),
         true,
-        Boolean(nextSession.mailboxHistory?.length)
+        Boolean(nextSession.mailboxHistory?.length),
+        Boolean(result.mailbox.note)
       );
       return;
     }
@@ -87,14 +89,15 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
       locale,
       buildInboxMessage(locale, refreshed.mailbox, refreshed.inboxCache),
       true,
-      Boolean(nextSession.mailboxHistory?.length)
+      Boolean(nextSession.mailboxHistory?.length),
+      Boolean(refreshed.mailbox.note)
     );
   } catch (error) {
     if (error instanceof MailboxExpiredError) {
       await clearMailboxState(payload.chatId);
       await getBot().api.sendMessage(payload.chatId, buildMailboxExpiredMessage(locale), {
         parse_mode: "HTML",
-        reply_markup: buildMainMenuKeyboard(locale, false, Boolean(session.mailboxHistory?.length))
+        reply_markup: buildMainMenuKeyboard(locale, false, Boolean(session.mailboxHistory?.length), false)
       });
       return;
     }
@@ -102,7 +105,12 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
     if (error instanceof AllowedMailboxUnavailableError) {
       await getBot().api.sendMessage(payload.chatId, buildAllowedDomainsBusyMessage(locale, [...ALLOWED_MAILBOX_DOMAINS]), {
         parse_mode: "HTML",
-        reply_markup: buildMainMenuKeyboard(locale, Boolean(session.mailbox), Boolean(session.mailboxHistory?.length))
+        reply_markup: buildMainMenuKeyboard(
+          locale,
+          Boolean(session.mailbox),
+          Boolean(session.mailboxHistory?.length),
+          Boolean(session.mailbox?.note)
+        )
       });
       return;
     }
@@ -110,7 +118,12 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
     console.error("mail-job-error", toLoggableError(error));
     await getBot().api.sendMessage(payload.chatId, buildWorkerErrorMessage(locale), {
       parse_mode: "HTML",
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(session.mailbox), Boolean(session.mailboxHistory?.length))
+      reply_markup: buildMainMenuKeyboard(
+        locale,
+        Boolean(session.mailbox),
+        Boolean(session.mailboxHistory?.length),
+        Boolean(session.mailbox?.note)
+      )
     });
   } finally {
     await clearPendingJob(payload);

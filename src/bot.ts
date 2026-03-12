@@ -13,6 +13,11 @@ import {
   buildImportInvalidFormatMessage,
   buildImportPromptMessage,
   buildImportQueuedMessage,
+  buildNoteDeleteMissingMessage,
+  buildNoteDeletedMessage,
+  buildNoteInvalidMessage,
+  buildNotePromptMessage,
+  buildNoteSavedMessage,
   buildRestoreMissingMessage,
   buildRestoreQueuedMessage
 } from "./messages.js";
@@ -22,6 +27,8 @@ import type { BotContext, MailJobType, MailboxSession, SupportedLocale } from ".
 import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isValidEmailAddress, normalizeEmailAddress } from "./utils.js";
 
 type GlobalBotCache = typeof globalThis & { __mailTickingBot?: Bot<BotContext> };
+
+const MAX_MAILBOX_NOTE_LENGTH = 500;
 
 function getLocaleFromContext(ctx: BotContext): SupportedLocale {
   return getSupportedLocale(ctx.session.__language_code ?? ctx.from?.language_code);
@@ -56,6 +63,15 @@ function hasHistory(ctx: BotContext): boolean {
   return Boolean(ctx.session.mailboxHistory?.length);
 }
 
+function buildContextMenuKeyboard(
+  ctx: BotContext,
+  locale: SupportedLocale,
+  hasMailbox = Boolean(ctx.session.mailbox),
+  hasHistoryValue = hasHistory(ctx)
+) {
+  return buildMainMenuKeyboard(locale, hasMailbox, hasHistoryValue, Boolean(ctx.session.mailbox?.note));
+}
+
 function getHistoryItemByIndex(ctx: BotContext, index: number): MailboxSession | undefined {
   return Number.isInteger(index) && index >= 0 ? ctx.session.mailboxHistory?.[index] : undefined;
 }
@@ -84,6 +100,7 @@ function buildImportedMailbox(email: string, existingMailbox?: MailboxSession): 
     code: existingMailbox?.code ?? "",
     domain: extractDomain(email),
     origin: "imported",
+    note: existingMailbox?.note,
     password: existingMailbox?.password ?? buildReadablePassword(),
     koreanProfile,
     identity,
@@ -94,7 +111,11 @@ function buildImportedMailbox(email: string, existingMailbox?: MailboxSession): 
   };
 }
 
-async function setPendingTextInput(ctx: BotContext, type?: "import-email"): Promise<void> {
+function normalizeMailboxNote(value: string): string {
+  return value.replace(/\r/g, "").trim().slice(0, MAX_MAILBOX_NOTE_LENGTH);
+}
+
+async function setPendingTextInput(ctx: BotContext, type?: "import-email" | "mailbox-note"): Promise<void> {
   const pendingTextInput = type
     ? {
         type,
@@ -124,6 +145,22 @@ async function openImportPrompt(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
   await setPendingTextInput(ctx, "import-email");
   await ctx.reply(buildImportPromptMessage(locale), {
+    parse_mode: "HTML",
+    reply_markup: buildImportKeyboard(locale)
+  });
+}
+
+async function openNotePrompt(ctx: BotContext): Promise<void> {
+  const locale = getLocaleFromContext(ctx);
+  if (!ctx.session.mailbox) {
+    await ctx.reply(ctx.t("mailbox_missing"), {
+      reply_markup: buildContextMenuKeyboard(ctx, locale, false)
+    });
+    return;
+  }
+
+  await setPendingTextInput(ctx, "mailbox-note");
+  await ctx.reply(buildNotePromptMessage(locale, ctx.session.mailbox.email), {
     parse_mode: "HTML",
     reply_markup: buildImportKeyboard(locale)
   });
@@ -180,9 +217,98 @@ async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
 
   if (!queued.ok) {
     await ctx.reply(queueRejectedCopy(locale, queued.reason), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
   }
+}
+
+async function saveMailboxNote(ctx: BotContext, rawNote: string): Promise<void> {
+  if (!ctx.chat) {
+    return;
+  }
+
+  const locale = getLocaleFromContext(ctx);
+  const activeMailbox = ctx.session.mailbox;
+  if (!activeMailbox) {
+    await clearPendingTextInput(ctx);
+    await ctx.reply(ctx.t("mailbox_missing"), {
+      reply_markup: buildContextMenuKeyboard(ctx, locale, false)
+    });
+    return;
+  }
+
+  const note = normalizeMailboxNote(rawNote);
+  if (!note) {
+    await ctx.reply(buildNoteInvalidMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildImportKeyboard(locale)
+    });
+    return;
+  }
+
+  const nextMailbox: MailboxSession = {
+    ...activeMailbox,
+    note
+  };
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox);
+
+  await patchChatSession(ctx.chat.id, (current) => ({
+    ...current,
+    mailbox: nextMailbox,
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox),
+    pendingTextInput: undefined
+  }));
+
+  ctx.session.mailbox = nextMailbox;
+  ctx.session.mailboxHistory = nextHistory;
+  ctx.session.pendingTextInput = undefined;
+
+  await ctx.reply(buildNoteSavedMessage(locale, nextMailbox.email), {
+    parse_mode: "HTML",
+    reply_markup: buildContextMenuKeyboard(ctx, locale, true)
+  });
+}
+
+async function deleteMailboxNote(ctx: BotContext): Promise<void> {
+  const locale = getLocaleFromContext(ctx);
+  await clearPendingTextInput(ctx);
+
+  if (!ctx.chat || !ctx.session.mailbox) {
+    await ctx.reply(ctx.t("mailbox_missing"), {
+      reply_markup: buildContextMenuKeyboard(ctx, locale, false)
+    });
+    return;
+  }
+
+  if (!ctx.session.mailbox.note) {
+    await ctx.reply(buildNoteDeleteMissingMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildContextMenuKeyboard(ctx, locale, true)
+    });
+    return;
+  }
+
+  const nextMailbox: MailboxSession = {
+    ...ctx.session.mailbox,
+    note: undefined
+  };
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox);
+
+  await patchChatSession(ctx.chat.id, (current) => ({
+    ...current,
+    mailbox: nextMailbox,
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox),
+    pendingTextInput: undefined
+  }));
+
+  ctx.session.mailbox = nextMailbox;
+  ctx.session.mailboxHistory = nextHistory;
+  ctx.session.pendingTextInput = undefined;
+
+  await ctx.reply(buildNoteDeletedMessage(locale, nextMailbox.email), {
+    parse_mode: "HTML",
+    reply_markup: buildContextMenuKeyboard(ctx, locale, true)
+  });
 }
 
 async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
@@ -194,7 +320,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
   await clearPendingTextInput(ctx);
   if (type !== "generate" && !ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
-      reply_markup: buildMainMenuKeyboard(locale, false, hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale, false)
     });
     return;
   }
@@ -210,7 +336,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
 
   if (!queued.ok) {
     await ctx.reply(queueRejectedCopy(locale, queued.reason), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
     return;
   }
@@ -225,7 +351,7 @@ async function showInbox(ctx: BotContext): Promise<void> {
   await clearPendingTextInput(ctx);
   if (!ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
-      reply_markup: buildMainMenuKeyboard(locale, false, hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale, false)
     });
     return;
   }
@@ -233,7 +359,7 @@ async function showInbox(ctx: BotContext): Promise<void> {
   await ctx.api.sendChatAction(ctx.chat!.id, "typing");
   await ctx.reply(buildInboxMessage(locale, ctx.session.mailbox, ctx.session.inboxCache), {
     parse_mode: "HTML",
-    reply_markup: buildMainMenuKeyboard(locale, true, hasHistory(ctx))
+    reply_markup: buildContextMenuKeyboard(ctx, locale, true)
   });
 }
 
@@ -259,7 +385,7 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
   if (!selected) {
     await ctx.reply(buildRestoreMissingMessage(locale), {
       parse_mode: "HTML",
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
     return;
   }
@@ -292,7 +418,7 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
 
   if (!queued.ok) {
     await ctx.reply(queueRejectedCopy(locale, queued.reason), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
   }
 }
@@ -306,7 +432,7 @@ async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void>
     await ctx.answerCallbackQuery({ text: locale === "id" ? "History tidak ditemukan" : "History entry not found" });
     await ctx.reply(buildDeleteHistoryMissingMessage(locale), {
       parse_mode: "HTML",
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
     return;
   }
@@ -315,7 +441,7 @@ async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void>
     await ctx.answerCallbackQuery({ text: locale === "id" ? "Email aktif tidak bisa dihapus" : "Active email cannot be deleted" });
     await ctx.reply(buildDeleteCurrentHistoryMessage(locale), {
       parse_mode: "HTML",
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
     return;
   }
@@ -337,7 +463,7 @@ async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void>
   });
   await ctx.reply(buildDeleteHistoryDoneMessage(locale), {
     parse_mode: "HTML",
-    reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+    reply_markup: buildContextMenuKeyboard(ctx, locale)
   });
 }
 
@@ -374,7 +500,7 @@ function createBot(): Bot<BotContext> {
           ctx.chat.id,
           locale === "id" ? "Terlalu cepat. Tunggu sebentar lalu coba lagi." : "Too many requests. Please wait a moment and try again.",
           {
-            reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+            reply_markup: buildContextMenuKeyboard(ctx, locale)
           }
         );
       }
@@ -385,7 +511,7 @@ function createBot(): Bot<BotContext> {
     const locale = getLocaleFromContext(ctx);
     await clearPendingTextInput(ctx);
     await ctx.reply(buildStartText(ctx), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
   });
 
@@ -403,6 +529,16 @@ function createBot(): Bot<BotContext> {
 
   bot.command("history", async (ctx) => {
     await showHistory(ctx);
+  });
+
+  bot.command("note", async (ctx) => {
+    const rawNote = getCommandArgumentText(ctx);
+    if (rawNote) {
+      await saveMailboxNote(ctx, rawNote);
+      return;
+    }
+
+    await openNotePrompt(ctx);
   });
 
   bot.command("import", async (ctx) => {
@@ -430,6 +566,11 @@ function createBot(): Bot<BotContext> {
 
     if (ctx.session.pendingTextInput.type === "import-email") {
       await importMailbox(ctx, ctx.message.text);
+      return;
+    }
+
+    if (ctx.session.pendingTextInput.type === "mailbox-note") {
+      await saveMailboxNote(ctx, ctx.message.text);
     }
   });
 
@@ -451,6 +592,16 @@ function createBot(): Bot<BotContext> {
   bot.callbackQuery("mt:history", async (ctx) => {
     await ctx.answerCallbackQuery();
     await showHistory(ctx);
+  });
+
+  bot.callbackQuery("mt:note:open", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await openNotePrompt(ctx);
+  });
+
+  bot.callbackQuery("mt:note:delete", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await deleteMailboxNote(ctx);
   });
 
   bot.callbackQuery("mt:import:open", async (ctx) => {
@@ -481,7 +632,7 @@ function createBot(): Bot<BotContext> {
     await ctx.i18n.setLocale(locale);
     await ctx.answerCallbackQuery(locale === "id" ? "Bahasa diubah" : "Language updated");
     await ctx.reply(locale === "id" ? "Bahasa aktif: Indonesia" : "Active language: English", {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
   });
 
@@ -490,7 +641,7 @@ function createBot(): Bot<BotContext> {
     await ctx.answerCallbackQuery();
     await clearPendingTextInput(ctx);
     await ctx.reply(buildStartText(ctx), {
-      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
   });
 

@@ -6,6 +6,7 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     readyTitle: "Data siap dipakai",
     inboxTitle: "Inbox aktif",
     email: "Email",
+    note: "Catatan",
     password: "Password saran",
     passwordNote: "Password ini dibuat otomatis untuk membantu pengisian form.",
     fullName: "Nama",
@@ -29,6 +30,12 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     importAllowedDomains: "Domain yang didukung",
     importQueued: "Email berhasil dimasukkan ke history. Bot sedang mencoba restore dan refresh inbox.",
     importInvalidFormat: "Format email tidak valid. Kirim ulang dalam format nama@domain.com.",
+    noteTitle: "Catatan email",
+    notePrompt: "Kirim 1 pesan berisi catatan untuk email aktif. Nanti catatan ini akan tampil saat email dibuka.",
+    noteSaved: "Catatan berhasil disimpan untuk email aktif.",
+    noteInvalid: "Catatan tidak boleh kosong.",
+    noteDeleted: "Catatan email berhasil dihapus.",
+    noteDeleteMissing: "Email aktif belum punya catatan untuk dihapus.",
     importInvalidDomain: "Domain email tidak didukung. Gunakan salah satu domain yang diizinkan.",
     domainRestricted: "Email ini tidak memakai domain yang diizinkan untuk generate atau restore.",
     allowedDomainsBusy: "MailTicking belum mengeluarkan email dari domain yang diizinkan. Coba lagi sebentar.",
@@ -48,6 +55,7 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     readyTitle: "Data ready",
     inboxTitle: "Active inbox",
     email: "Email",
+    note: "Note",
     password: "Suggested password",
     passwordNote: "This password is generated automatically to help fill signup forms.",
     fullName: "Name",
@@ -71,6 +79,12 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     importAllowedDomains: "Supported domains",
     importQueued: "The email was saved to history. The bot is now restoring it and refreshing the inbox.",
     importInvalidFormat: "The email format is invalid. Send it again as name@domain.com.",
+    noteTitle: "Email note",
+    notePrompt: "Send 1 message containing a note for the active email. The note will appear whenever the email is opened.",
+    noteSaved: "The note was saved for the active email.",
+    noteInvalid: "The note cannot be empty.",
+    noteDeleted: "The email note was deleted.",
+    noteDeleteMissing: "The active email does not have a note to delete.",
     importInvalidDomain: "That email domain is not supported. Use one of the allowed domains.",
     domainRestricted: "This email does not use an allowed domain for generate or restore.",
     allowedDomainsBusy: "MailTicking is not returning an email from the allowed domains right now. Please try again shortly.",
@@ -138,6 +152,10 @@ function renderBaseMailbox(locale: SupportedLocale, mailbox: MailboxSession): st
     `<b>${copy(locale, "email")}</b>`,
     `<code>${escapeHtml(mailbox.email)}</code>`
   ];
+
+  if (mailbox.note) {
+    block.push("", `<b>${copy(locale, "note")}</b>`, escapeHtml(mailbox.note));
+  }
 
   if (mailbox.origin === "imported") {
     return block.join("\n");
@@ -224,11 +242,15 @@ export function buildHistoryMessage(
 
   const lines = history.map((mailbox, index) => {
     const current = mailbox.email === currentEmail ? ` <i>(${copy(locale, "historyCurrent")})</i>` : "";
+    const preview = mailbox.note
+      ? `  <b>${copy(locale, "note")}</b> ${escapeHtml(trimPreview(mailbox.note, 90))}`
+      : undefined;
     return [
       `${index + 1}. <code>${escapeHtml(mailbox.email)}</code>${current}`,
       `  <b>${copy(locale, "historyCreated")}</b> ${escapeHtml(formatDateTime(mailbox.createdAt, locale))}`,
-      `  <b>${copy(locale, "historyUpdated")}</b> ${escapeHtml(formatDateTime(mailbox.updatedAt, locale))}`
-    ].join("\n");
+      `  <b>${copy(locale, "historyUpdated")}</b> ${escapeHtml(formatDateTime(mailbox.updatedAt, locale))}`,
+      preview
+    ].filter(Boolean).join("\n");
   });
 
   return [`<b>${copy(locale, "historyTitle")}</b>`, "", ...lines].join("\n\n");
@@ -264,6 +286,40 @@ export function buildImportQueuedMessage(locale: SupportedLocale, email: string)
 
 export function buildImportInvalidFormatMessage(locale: SupportedLocale): string {
   return `<b>${copy(locale, "importInvalidFormat")}</b>`;
+}
+
+export function buildNotePromptMessage(locale: SupportedLocale, email: string): string {
+  return [
+    `<b>${copy(locale, "noteTitle")}</b>`,
+    "",
+    `<code>${escapeHtml(email)}</code>`,
+    "",
+    copy(locale, "notePrompt")
+  ].join("\n");
+}
+
+export function buildNoteSavedMessage(locale: SupportedLocale, email: string): string {
+  return [
+    `<b>${copy(locale, "noteSaved")}</b>`,
+    "",
+    `<code>${escapeHtml(email)}</code>`
+  ].join("\n");
+}
+
+export function buildNoteInvalidMessage(locale: SupportedLocale): string {
+  return `<b>${copy(locale, "noteInvalid")}</b>`;
+}
+
+export function buildNoteDeletedMessage(locale: SupportedLocale, email: string): string {
+  return [
+    `<b>${copy(locale, "noteDeleted")}</b>`,
+    "",
+    `<code>${escapeHtml(email)}</code>`
+  ].join("\n");
+}
+
+export function buildNoteDeleteMissingMessage(locale: SupportedLocale): string {
+  return `<b>${copy(locale, "noteDeleteMissing")}</b>`;
 }
 
 export function buildImportInvalidDomainMessage(locale: SupportedLocale, domains: string[]): string {
