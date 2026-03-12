@@ -5,6 +5,7 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
   id: {
     generate: "Generate Email",
     regenerate: "Regenerate",
+    import: "Input Email",
     refresh: "Refresh Inbox",
     inbox: "Lihat Inbox",
     history: "Riwayat Email",
@@ -20,6 +21,7 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
   en: {
     generate: "Generate Email",
     regenerate: "Regenerate",
+    import: "Add Email",
     refresh: "Refresh Inbox",
     inbox: "View Inbox",
     history: "Email History",
@@ -49,10 +51,12 @@ function shortenEmail(email: string, maxLength = 28): string {
 export function buildMainMenuKeyboard(locale: SupportedLocale, hasMailbox: boolean, hasHistory = hasMailbox): InlineKeyboard {
   const keyboard = new InlineKeyboard();
 
-  keyboard.text(label(locale, hasMailbox ? "regenerate" : "generate"), "mt:generate");
+  keyboard
+    .text(label(locale, hasMailbox ? "regenerate" : "generate"), "mt:generate")
+    .text(label(locale, "import"), "mt:import:open");
 
   if (hasMailbox) {
-    keyboard.text(label(locale, "refresh"), "mt:refresh").row();
+    keyboard.row().text(label(locale, "refresh"), "mt:refresh");
     keyboard.text(label(locale, "inbox"), "mt:inbox");
   }
 
@@ -81,6 +85,11 @@ export function buildLanguageKeyboard(locale: SupportedLocale): InlineKeyboard {
     .text(label(locale, "back"), "mt:menu");
 }
 
+export function buildImportKeyboard(locale: SupportedLocale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(label(locale, "back"), "mt:menu");
+}
+
 export function buildHistoryKeyboard(
   locale: SupportedLocale,
   history: MailboxSession[],
@@ -103,6 +112,7 @@ export function buildHistoryKeyboard(
       .row();
   });
 
+  keyboard.row().text(label(locale, "import"), "mt:import:open");
   keyboard.text(label(locale, "back"), "mt:menu");
   return keyboard;
 }

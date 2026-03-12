@@ -2,20 +2,24 @@ import path from "node:path";
 import { I18n } from "@grammyjs/i18n";
 import { limit } from "@grammyjs/ratelimiter";
 import { Bot, session } from "grammy";
-import { getBotToken, getSupportedLocale } from "./config.js";
-import { buildHistoryKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard } from "./keyboards.js";
+import { MAILTICKING_URL, getBotToken, getSupportedLocale } from "./config.js";
+import { buildHistoryKeyboard, buildImportKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard } from "./keyboards.js";
 import {
   buildDeleteCurrentHistoryMessage,
   buildDeleteHistoryDoneMessage,
   buildDeleteHistoryMissingMessage,
   buildHistoryMessage,
   buildInboxMessage,
+  buildImportInvalidFormatMessage,
+  buildImportPromptMessage,
+  buildImportQueuedMessage,
   buildRestoreMissingMessage,
   buildRestoreQueuedMessage
 } from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
-import { clearBrowserState, createInitialSessionData, createSessionStorage, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
+import { clearBrowserState, createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
 import type { BotContext, MailJobType, MailboxSession, SupportedLocale } from "./types.js";
+import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isValidEmailAddress, normalizeEmailAddress } from "./utils.js";
 
 type GlobalBotCache = typeof globalThis & { __mailTickingBot?: Bot<BotContext> };
 
@@ -56,12 +60,137 @@ function getHistoryItemByIndex(ctx: BotContext, index: number): MailboxSession |
   return Number.isInteger(index) && index >= 0 ? ctx.session.mailboxHistory?.[index] : undefined;
 }
 
+function getCommandArgumentText(ctx: BotContext): string {
+  const text = ctx.message?.text ?? "";
+  const firstSpaceIndex = text.indexOf(" ");
+  return firstSpaceIndex >= 0 ? text.slice(firstSpaceIndex + 1).trim() : "";
+}
+
+function buildImportedMailbox(email: string, existingMailbox?: MailboxSession): MailboxSession {
+  const now = new Date().toISOString();
+  const koreanProfile = existingMailbox?.koreanProfile
+    ?? existingMailbox?.koreanProfiles?.[0]
+    ?? buildKoreanProfile();
+  const existingIdentity = existingMailbox?.identity?.fullName && existingMailbox?.identity?.birthDate
+    ? existingMailbox.identity
+    : undefined;
+  const identity = existingIdentity ?? {
+    fullName: koreanProfile.fullName ?? buildRecommendedName(),
+    birthDate: koreanProfile.birthDate ?? buildAdultBirthDate(25, 39)
+  };
+
+  return {
+    email,
+    code: existingMailbox?.code ?? "",
+    domain: extractDomain(email),
+    password: existingMailbox?.password ?? buildReadablePassword(),
+    koreanProfile,
+    identity,
+    virtualCards: existingMailbox?.virtualCards ?? generateVirtualCards("625814260", 1),
+    sourceUrl: existingMailbox?.sourceUrl ?? MAILTICKING_URL,
+    createdAt: existingMailbox?.createdAt ?? now,
+    updatedAt: now
+  };
+}
+
+async function setPendingTextInput(ctx: BotContext, type?: "import-email"): Promise<void> {
+  const pendingTextInput = type
+    ? {
+        type,
+        requestedAt: new Date().toISOString()
+      }
+    : undefined;
+
+  if (ctx.chat) {
+    await patchChatSession(ctx.chat.id, (current) => ({
+      ...current,
+      pendingTextInput
+    }));
+  }
+
+  ctx.session.pendingTextInput = pendingTextInput;
+}
+
+async function clearPendingTextInput(ctx: BotContext): Promise<void> {
+  if (!ctx.session.pendingTextInput) {
+    return;
+  }
+
+  await setPendingTextInput(ctx);
+}
+
+async function openImportPrompt(ctx: BotContext): Promise<void> {
+  const locale = getLocaleFromContext(ctx);
+  await setPendingTextInput(ctx, "import-email");
+  await ctx.reply(buildImportPromptMessage(locale), {
+    parse_mode: "HTML",
+    reply_markup: buildImportKeyboard(locale)
+  });
+}
+
+async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
+  if (!ctx.chat || !ctx.from) {
+    return;
+  }
+
+  const locale = getLocaleFromContext(ctx);
+  const email = normalizeEmailAddress(rawEmail);
+
+  if (!isValidEmailAddress(email)) {
+    await ctx.reply(buildImportInvalidFormatMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildImportKeyboard(locale)
+    });
+    return;
+  }
+
+  const existingMailbox = ctx.session.mailbox?.email === email
+    ? ctx.session.mailbox
+    : findMailboxInHistory(ctx.session.mailboxHistory, email);
+  const importedMailbox = buildImportedMailbox(email, existingMailbox);
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, importedMailbox);
+
+  await clearBrowserState(ctx.chat.id);
+  await patchChatSession(ctx.chat.id, (current) => ({
+    ...current,
+    mailbox: importedMailbox,
+    mailboxHistory: nextHistory,
+    inboxCache: undefined,
+    pendingTextInput: undefined
+  }));
+
+  ctx.session.mailbox = importedMailbox;
+  ctx.session.mailboxHistory = nextHistory;
+  ctx.session.inboxCache = undefined;
+  ctx.session.pendingTextInput = undefined;
+
+  await ctx.reply(buildImportQueuedMessage(locale, email), {
+    parse_mode: "HTML",
+    reply_markup: buildProcessingKeyboard(locale)
+  });
+
+  const queued = await enqueueMailJob({
+    chatId: ctx.chat.id,
+    userId: ctx.from.id,
+    locale,
+    type: "refresh",
+    requestedAt: new Date().toISOString()
+  });
+
+  if (!queued.ok) {
+    await ctx.reply(queueRejectedCopy(locale, queued.reason), {
+      reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
+    });
+  }
+}
+
 async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
   if (!ctx.chat || !ctx.from) {
     return;
   }
 
   const locale = getLocaleFromContext(ctx);
+  await clearPendingTextInput(ctx);
   if (type !== "generate" && !ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
       reply_markup: buildMainMenuKeyboard(locale, false, hasHistory(ctx))
@@ -92,6 +221,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
 
 async function showInbox(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
+  await clearPendingTextInput(ctx);
   if (!ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
       reply_markup: buildMainMenuKeyboard(locale, false, hasHistory(ctx))
@@ -108,6 +238,7 @@ async function showInbox(ctx: BotContext): Promise<void> {
 
 async function showHistory(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
+  await clearPendingTextInput(ctx);
   const history = ctx.session.mailboxHistory ?? [];
 
   await ctx.reply(buildHistoryMessage(locale, history, ctx.session.mailbox?.email), {
@@ -122,6 +253,7 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
   }
 
   const locale = getLocaleFromContext(ctx);
+  await clearPendingTextInput(ctx);
   const selected = getHistoryItemByIndex(ctx, index);
   if (!selected) {
     await ctx.reply(buildRestoreMissingMessage(locale), {
@@ -166,6 +298,7 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
 
 async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void> {
   const locale = getLocaleFromContext(ctx);
+  await clearPendingTextInput(ctx);
   const selected = getHistoryItemByIndex(ctx, index);
 
   if (!selected) {
@@ -249,6 +382,7 @@ function createBot(): Bot<BotContext> {
 
   bot.command("start", async (ctx) => {
     const locale = getLocaleFromContext(ctx);
+    await clearPendingTextInput(ctx);
     await ctx.reply(buildStartText(ctx), {
       reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
     });
@@ -270,11 +404,32 @@ function createBot(): Bot<BotContext> {
     await showHistory(ctx);
   });
 
+  bot.command("import", async (ctx) => {
+    const rawEmail = getCommandArgumentText(ctx);
+    if (rawEmail) {
+      await importMailbox(ctx, rawEmail);
+      return;
+    }
+
+    await openImportPrompt(ctx);
+  });
+
   bot.command("language", async (ctx) => {
     const locale = getLocaleFromContext(ctx);
+    await clearPendingTextInput(ctx);
     await ctx.reply(ctx.t("language_prompt"), {
       reply_markup: buildLanguageKeyboard(locale)
     });
+  });
+
+  bot.on("message:text", async (ctx) => {
+    if (!ctx.session.pendingTextInput || ctx.message.text.startsWith("/")) {
+      return;
+    }
+
+    if (ctx.session.pendingTextInput.type === "import-email") {
+      await importMailbox(ctx, ctx.message.text);
+    }
   });
 
   bot.callbackQuery("mt:generate", async (ctx) => {
@@ -297,6 +452,11 @@ function createBot(): Bot<BotContext> {
     await showHistory(ctx);
   });
 
+  bot.callbackQuery("mt:import:open", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await openImportPrompt(ctx);
+  });
+
   bot.callbackQuery(/^mt:restore:i:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     await restoreMailbox(ctx, Number(ctx.match[1]));
@@ -309,6 +469,7 @@ function createBot(): Bot<BotContext> {
   bot.callbackQuery("mt:lang:open", async (ctx) => {
     const locale = getLocaleFromContext(ctx);
     await ctx.answerCallbackQuery();
+    await clearPendingTextInput(ctx);
     await ctx.reply(ctx.t("language_prompt"), {
       reply_markup: buildLanguageKeyboard(locale)
     });
@@ -326,6 +487,7 @@ function createBot(): Bot<BotContext> {
   bot.callbackQuery("mt:menu", async (ctx) => {
     const locale = getLocaleFromContext(ctx);
     await ctx.answerCallbackQuery();
+    await clearPendingTextInput(ctx);
     await ctx.reply(buildStartText(ctx), {
       reply_markup: buildMainMenuKeyboard(locale, Boolean(ctx.session.mailbox), hasHistory(ctx))
     });

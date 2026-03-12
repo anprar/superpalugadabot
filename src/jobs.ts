@@ -1,12 +1,14 @@
+import { ALLOWED_MAILBOX_DOMAINS } from "./config.js";
 import { getBot } from "./bot.js";
 import { buildMainMenuKeyboard } from "./keyboards.js";
 import {
+  buildAllowedDomainsBusyMessage,
   buildInboxMessage,
   buildMailboxExpiredMessage,
   buildMailboxReadyMessage,
   buildWorkerErrorMessage
 } from "./messages.js";
-import { generateMailbox, MailboxExpiredError, refreshInbox } from "./scraper.js";
+import { AllowedMailboxUnavailableError, generateMailbox, MailboxExpiredError, refreshInbox } from "./scraper.js";
 import {
   clearMailboxState,
   getBrowserState,
@@ -93,6 +95,14 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
       await getBot().api.sendMessage(payload.chatId, buildMailboxExpiredMessage(locale), {
         parse_mode: "HTML",
         reply_markup: buildMainMenuKeyboard(locale, false, Boolean(session.mailboxHistory?.length))
+      });
+      return;
+    }
+
+    if (error instanceof AllowedMailboxUnavailableError) {
+      await getBot().api.sendMessage(payload.chatId, buildAllowedDomainsBusyMessage(locale, [...ALLOWED_MAILBOX_DOMAINS]), {
+        parse_mode: "HTML",
+        reply_markup: buildMainMenuKeyboard(locale, Boolean(session.mailbox), Boolean(session.mailboxHistory?.length))
       });
       return;
     }

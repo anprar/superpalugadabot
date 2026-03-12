@@ -1,8 +1,10 @@
+import { ALLOWED_MAILBOX_DOMAINS } from "./config.js";
 import type { KoreaProfileSuggestion, SupportedLocale } from "./types.js";
 
 const EASY_CONSONANTS = ["b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "z"] as const;
 const EASY_VOWELS = ["a", "e", "i", "o", "u"] as const;
 const EASY_DIGITS = ["2", "3", "4", "5", "6", "7", "8", "9"] as const;
+const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const KOREAN_LAST_NAMES = ["Kim", "Lee", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon", "Jang", "Lim"] as const;
 const KOREAN_GIVEN_NAMES = [
   "Minseo",
@@ -215,6 +217,23 @@ export function normalizeLine(value: unknown, fallback: string): string {
 export function extractDomain(email: string): string {
   const [, domain = ""] = email.split("@");
   return domain.toLowerCase();
+}
+
+export function normalizeEmailAddress(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function isValidEmailAddress(value: string): boolean {
+  return EMAIL_ADDRESS_REGEX.test(normalizeEmailAddress(value));
+}
+
+export function isAllowedMailboxDomain(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return ALLOWED_MAILBOX_DOMAINS.includes(normalized as typeof ALLOWED_MAILBOX_DOMAINS[number]);
+}
+
+export function isAllowedMailboxEmail(value: string): boolean {
+  return isAllowedMailboxDomain(extractDomain(normalizeEmailAddress(value)));
 }
 
 export function generateLuhnCard(bin: string, length = 16): string {

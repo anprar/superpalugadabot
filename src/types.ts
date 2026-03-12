@@ -5,6 +5,7 @@ import type { BrowserContext } from "playwright-core";
 export type SupportedLocale = "id" | "en";
 export type MailJobType = "generate" | "refresh";
 export type InboxSource = "dom" | "json" | "mixed";
+export type PendingTextInputType = "import-email";
 export type BrowserStorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 
 export interface InboxItem {
@@ -61,6 +62,11 @@ export interface PendingJobState {
   requestedAt: string;
 }
 
+export interface PendingTextInputState {
+  type: PendingTextInputType;
+  requestedAt: string;
+}
+
 export interface Phase2SurveyTask {
   url?: string;
   proxyRegion?: string;
@@ -74,6 +80,7 @@ export interface BotSessionData {
   mailboxHistory?: MailboxSession[];
   inboxCache?: InboxCache;
   pendingJob?: PendingJobState;
+  pendingTextInput?: PendingTextInputState;
   phase2?: Phase2SurveyTask;
 }
 

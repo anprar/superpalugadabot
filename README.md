@@ -6,9 +6,12 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 
 - `/start` untuk welcome + inline keyboard
 - `/generate` untuk membuat email temporary dari `https://www.mailticking.com/`
+- `/import email@domain.com` untuk memasukkan email lama dari MailTicking ke history lalu otomatis dicoba restore
 - `/refresh` untuk refresh inbox terbaru
 - `/inbox` untuk lihat daftar email subject + preview
 - `/history` untuk melihat riwayat email, restore email lama, dan hapus entry yang dipilih
+- generate dibatasi ke domain: `rulersonline.com`, `mediaeast.uk`, `mediaholy.com`, `incart.com`, `justdefinition.com`, `gongjua.com`, `123mails.org`
+- import/restore/refresh bisa dipakai untuk email lama dari domain MailTicking lain selama email itu memang masih terdaftar di web
 - password saran acak 12 karakter, mudah dibaca, dengan huruf besar, huruf kecil, dan angka
 - nama rekomendasi + tanggal lahir acak dengan umur minimal 25 tahun
 - 1 profil Korea sintetis tersimpan: nama, tanggal lahir, alamat, kota/kabupaten, dan kode pos

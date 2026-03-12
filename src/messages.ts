@@ -24,6 +24,14 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     historyUpdated: "diperbarui",
     restoreQueued: "Email lama berhasil dipilih. Bot sedang mencoba restore dan refresh inbox.",
     restoreMissing: "Email tersebut tidak ditemukan di riwayat.",
+    importTitle: "Input email sendiri",
+    importPrompt: "Kirim 1 alamat email MailTicking yang pernah kamu buat. Domain apa pun boleh selama memang terdaftar di web.",
+    importAllowedDomains: "Domain yang didukung",
+    importQueued: "Email berhasil dimasukkan ke history. Bot sedang mencoba restore dan refresh inbox.",
+    importInvalidFormat: "Format email tidak valid. Kirim ulang dalam format nama@domain.com.",
+    importInvalidDomain: "Domain email tidak didukung. Gunakan salah satu domain yang diizinkan.",
+    domainRestricted: "Email ini tidak memakai domain yang diizinkan untuk generate atau restore.",
+    allowedDomainsBusy: "MailTicking belum mengeluarkan email dari domain yang diizinkan. Coba lagi sebentar.",
     deleteDone: "Email berhasil dihapus dari riwayat.",
     deleteMissing: "Email yang ingin dihapus tidak ditemukan di riwayat.",
     deleteCurrent: "Email aktif tidak bisa dihapus dari riwayat. Ganti email aktif dulu.",
@@ -58,6 +66,14 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     historyUpdated: "updated",
     restoreQueued: "The older email was selected. The bot is now restoring it and refreshing the inbox.",
     restoreMissing: "That email was not found in history.",
+    importTitle: "Add your own email",
+    importPrompt: "Send 1 MailTicking email address you created before. Any domain is allowed as long as it is registered on the site.",
+    importAllowedDomains: "Supported domains",
+    importQueued: "The email was saved to history. The bot is now restoring it and refreshing the inbox.",
+    importInvalidFormat: "The email format is invalid. Send it again as name@domain.com.",
+    importInvalidDomain: "That email domain is not supported. Use one of the allowed domains.",
+    domainRestricted: "This email does not use an allowed domain for generate or restore.",
+    allowedDomainsBusy: "MailTicking is not returning an email from the allowed domains right now. Please try again shortly.",
     deleteDone: "The email was removed from history.",
     deleteMissing: "The email to remove was not found in history.",
     deleteCurrent: "The active email cannot be removed from history. Switch active email first.",
@@ -74,6 +90,10 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
 
 function copy(locale: SupportedLocale, key: string): string {
   return COPY[locale][key];
+}
+
+function renderAllowedDomains(domains: string[]): string {
+  return domains.map((domain) => `<code>${escapeHtml(domain)}</code>`).join("\n");
 }
 
 function renderInboxItems(locale: SupportedLocale, items: InboxItem[]): string {
@@ -217,6 +237,52 @@ export function buildRestoreQueuedMessage(locale: SupportedLocale, email: string
 
 export function buildRestoreMissingMessage(locale: SupportedLocale): string {
   return `<b>${copy(locale, "restoreMissing")}</b>`;
+}
+
+export function buildImportPromptMessage(locale: SupportedLocale): string {
+  return [
+    `<b>${copy(locale, "importTitle")}</b>`,
+    "",
+    copy(locale, "importPrompt")
+  ].join("\n");
+}
+
+export function buildImportQueuedMessage(locale: SupportedLocale, email: string): string {
+  return [
+    `<b>${copy(locale, "importQueued")}</b>`,
+    "",
+    `<code>${escapeHtml(email)}</code>`
+  ].join("\n");
+}
+
+export function buildImportInvalidFormatMessage(locale: SupportedLocale): string {
+  return `<b>${copy(locale, "importInvalidFormat")}</b>`;
+}
+
+export function buildImportInvalidDomainMessage(locale: SupportedLocale, domains: string[]): string {
+  return [
+    `<b>${copy(locale, "importInvalidDomain")}</b>`,
+    "",
+    renderAllowedDomains(domains)
+  ].join("\n");
+}
+
+export function buildDomainRestrictedMessage(locale: SupportedLocale, email: string, domains: string[]): string {
+  return [
+    `<b>${copy(locale, "domainRestricted")}</b>`,
+    "",
+    `<code>${escapeHtml(email)}</code>`,
+    "",
+    renderAllowedDomains(domains)
+  ].join("\n");
+}
+
+export function buildAllowedDomainsBusyMessage(locale: SupportedLocale, domains: string[]): string {
+  return [
+    `<b>${copy(locale, "allowedDomainsBusy")}</b>`,
+    "",
+    renderAllowedDomains(domains)
+  ].join("\n");
 }
 
 export function buildDeleteHistoryDoneMessage(locale: SupportedLocale): string {

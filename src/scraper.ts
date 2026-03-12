@@ -1,8 +1,10 @@
 import chromium from "@sparticuz/chromium";
 import { chromium as playwrightChromium, type Page } from "playwright-core";
 import {
+  ALLOWED_MAILBOX_DOMAINS,
   MAILTICKING_URL,
   MAX_INBOX_ITEMS,
+  MAX_PUBLIC_MAILBOX_ATTEMPTS,
   PLAYWRIGHT_DEFAULT_TIMEOUT_MS,
   PLAYWRIGHT_NAVIGATION_TIMEOUT_MS,
   getProxyUrls
@@ -16,7 +18,7 @@ import type {
   ScraperMailboxResult,
   ScraperRefreshResult
 } from "./types.js";
-import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, normalizeLine, pickRandom, randomDelay } from "./utils.js";
+import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isAllowedMailboxEmail, normalizeEmailAddress, normalizeLine, pickRandom, randomDelay } from "./utils.js";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
@@ -28,6 +30,13 @@ class MailboxExpiredError extends Error {
   constructor(message = "Mailbox session expired") {
     super(message);
     this.name = "MailboxExpiredError";
+  }
+}
+
+class AllowedMailboxUnavailableError extends Error {
+  constructor(message = "Allowed mailbox domains are unavailable") {
+    super(message);
+    this.name = "AllowedMailboxUnavailableError";
   }
 }
 
@@ -252,19 +261,24 @@ async function postJson(page: Page, url: string, body: Record<string, unknown>):
 }
 
 async function generatePublicMailbox(page: Page): Promise<string> {
-  const payload = await postJson(page, "/get-mailbox", {
-    types: ["4"]
-  });
+  for (let attempt = 0; attempt < MAX_PUBLIC_MAILBOX_ATTEMPTS; attempt += 1) {
+    const payload = await postJson(page, "/get-mailbox", {
+      types: ["4"]
+    });
 
-  if (payload.success !== true || typeof payload.email !== "string" || !payload.email.includes("@")) {
-    throw new Error("MailTicking did not return a valid public mailbox");
+    if (payload.success !== true || typeof payload.email !== "string" || !payload.email.includes("@")) {
+      throw new Error("MailTicking did not return a valid public mailbox");
+    }
+
+    const email = normalizeEmailAddress(payload.email);
+    if (isAllowedMailboxEmail(email)) {
+      return email;
+    }
   }
 
-  if (extractDomain(payload.email).includes("gmail")) {
-    throw new Error(`MailTicking returned a Gmail mailbox unexpectedly: ${payload.email}`);
-  }
-
-  return payload.email;
+  throw new AllowedMailboxUnavailableError(
+    `MailTicking did not return an allowed mailbox after ${MAX_PUBLIC_MAILBOX_ATTEMPTS} attempts. Allowed domains: ${ALLOWED_MAILBOX_DOMAINS.join(", ")}`
+  );
 }
 
 async function activateMailbox(page: Page, email: string): Promise<void> {
@@ -527,4 +541,4 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
   }
 }
 
-export { MailboxExpiredError };
+export { AllowedMailboxUnavailableError, MailboxExpiredError };

@@ -4,8 +4,18 @@ export const MAILTICKING_URL = "https://www.mailticking.com/";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 export const MAX_INBOX_ITEMS = 10;
 export const MAX_MAILBOX_HISTORY_ITEMS = 8;
+export const MAX_PUBLIC_MAILBOX_ATTEMPTS = 24;
 export const PLAYWRIGHT_DEFAULT_TIMEOUT_MS = 45_000;
 export const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 55_000;
+export const ALLOWED_MAILBOX_DOMAINS = [
+  "rulersonline.com",
+  "mediaeast.uk",
+  "mediaholy.com",
+  "incart.com",
+  "justdefinition.com",
+  "gongjua.com",
+  "123mails.org"
+] as const;
 
 export const ACTION_POLICIES: Record<string, ActionPolicy> = {
   generate: {
