@@ -405,6 +405,49 @@ function countInboxEntries(payload: unknown): number {
   return extractInboxEntries(payload).length;
 }
 
+function scoreInboxItems(items: InboxItem[]): number {
+  return items.reduce((score, item) => {
+    let next = score;
+    if (item.sender && item.sender !== "Unknown sender") {
+      next += 1;
+    }
+
+    if (item.subject && item.subject !== "No subject") {
+      next += 2;
+    }
+
+    if (item.preview && item.preview !== "No preview yet") {
+      next += 1;
+    }
+
+    return next;
+  }, 0);
+}
+
+function selectBestInboxItems(jsonItems: InboxItem[], domItems: InboxItem[]): { items: InboxItem[]; source: InboxCache["source"] } {
+  if (jsonItems.length === 0 && domItems.length === 0) {
+    return {
+      items: [],
+      source: "json"
+    };
+  }
+
+  const jsonScore = scoreInboxItems(jsonItems);
+  const domScore = scoreInboxItems(domItems);
+
+  if (domItems.length > 0 && domScore >= jsonScore) {
+    return {
+      items: domItems,
+      source: jsonItems.length > 0 ? "mixed" : "dom"
+    };
+  }
+
+  return {
+    items: jsonItems,
+    source: domItems.length > 0 ? "mixed" : "json"
+  };
+}
+
 async function parseInboxFromDom(page: Page): Promise<InboxItem[]> {
   const items = await page.evaluate((limit) => {
     return Array.from(document.querySelectorAll("#message-list tr"))
@@ -553,11 +596,11 @@ export async function refreshInbox(
       }
     }
 
+    const inboxEntryCount = countInboxEntries(payload);
     const jsonItems = normalizeInboxFromJson(payload);
     let domItems: InboxItem[] = [];
-    const inboxEntryCount = countInboxEntries(payload);
 
-    if (jsonItems.length === 0) {
+    if (inboxEntryCount > 0 || jsonItems.length === 0) {
       domItems = await reloadAndParseInboxFromDom(
         page,
         existingMailbox.email,
@@ -565,8 +608,9 @@ export async function refreshInbox(
       );
     }
 
-    const items = jsonItems.length > 0 ? jsonItems : domItems;
-    const source = jsonItems.length > 0 ? "json" : "dom";
+    const selectedInbox = selectBestInboxItems(jsonItems, domItems);
+    const items = selectedInbox.items;
+    const source = selectedInbox.source;
     const koreanProfile = existingMailbox.koreanProfile
       ?? existingMailbox.koreanProfiles?.[0]
       ?? {
