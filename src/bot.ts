@@ -2,9 +2,14 @@ import path from "node:path";
 import { I18n } from "@grammyjs/i18n";
 import { limit } from "@grammyjs/ratelimiter";
 import { Bot, session } from "grammy";
-import { MAILTICKING_URL, getBotToken, getSupportedLocale } from "./config.js";
+import { MAILTICKING_URL, MAX_MAILBOX_HISTORY_ITEMS, getBotToken, getSupportedLocale } from "./config.js";
+import { getUserAccount, isAdminAccount, setUserPlan } from "./accounts.js";
 import { buildHistoryKeyboard, buildImportKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard } from "./keyboards.js";
 import {
+  buildAccountStatusMessage,
+  buildAdminOnlyMessage,
+  buildAdminPlanUpdatedMessage,
+  buildAdminSetPlanUsageMessage,
   buildResetSessionDoneMessage,
   buildDeleteCurrentHistoryMessage,
   buildDeleteHistoryDoneMessage,
@@ -19,12 +24,14 @@ import {
   buildNoteInvalidMessage,
   buildNotePromptMessage,
   buildNoteSavedMessage,
+  buildPlanExpiredMessage,
   buildRestoreMissingMessage,
-  buildRestoreQueuedMessage
+  buildRestoreQueuedMessage,
+  buildWelcomeMessage
 } from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
-import { clearBrowserState, createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
-import type { BotContext, MailJobType, MailboxSession, SupportedLocale } from "./types.js";
+import { clearBrowserState, createInitialSessionData, createSessionStorage, enforceMailboxHistoryLimit, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
+import type { BotContext, MailJobType, MailboxSession, SupportedLocale, UserAccount } from "./types.js";
 import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isValidEmailAddress, normalizeEmailAddress } from "./utils.js";
 
 type GlobalBotCache = typeof globalThis & { __mailTickingBot?: Bot<BotContext> };
@@ -56,8 +63,31 @@ function queueRejectedCopy(locale: SupportedLocale, reason: string): string {
     : `The job could not be queued yet: ${reason}`;
 }
 
-function buildStartText(ctx: BotContext): string {
-  return ctx.t("start_message");
+async function resolveContextAccount(ctx: BotContext): Promise<UserAccount | undefined> {
+  if (!ctx.from || !ctx.chat) {
+    return undefined;
+  }
+
+  const account = await getUserAccount({
+    userId: ctx.from.id,
+    chatId: ctx.chat.id,
+    username: ctx.from.username,
+    firstName: ctx.from.first_name
+  });
+  const nextSession = await enforceMailboxHistoryLimit(ctx.chat.id, account.historyLimit);
+  ctx.session.mailboxHistory = nextSession.mailboxHistory;
+  ctx.session.mailbox = nextSession.mailbox;
+  ctx.session.inboxCache = nextSession.inboxCache;
+  return account;
+}
+
+async function buildStartText(ctx: BotContext): Promise<string> {
+  const account = await resolveContextAccount(ctx);
+  if (!ctx.from || !account) {
+    return ctx.t("start_message");
+  }
+
+  return buildWelcomeMessage(getLocaleFromContext(ctx), ctx.from.id, account, ctx.t("start_message"));
 }
 
 function hasHistory(ctx: BotContext): boolean {
@@ -173,6 +203,7 @@ async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
   }
 
   const locale = getLocaleFromContext(ctx);
+  const account = await resolveContextAccount(ctx);
   const email = normalizeEmailAddress(rawEmail);
 
   if (!isValidEmailAddress(email)) {
@@ -187,7 +218,7 @@ async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
     ? ctx.session.mailbox
     : findMailboxInHistory(ctx.session.mailboxHistory, email);
   const importedMailbox = buildImportedMailbox(email, existingMailbox);
-  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, importedMailbox);
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, importedMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
 
   await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
@@ -228,6 +259,7 @@ async function saveMailboxNote(ctx: BotContext, rawNote: string): Promise<void> 
   }
 
   const locale = getLocaleFromContext(ctx);
+  const account = await resolveContextAccount(ctx);
   const activeMailbox = ctx.session.mailbox;
   if (!activeMailbox) {
     await clearPendingTextInput(ctx);
@@ -250,12 +282,12 @@ async function saveMailboxNote(ctx: BotContext, rawNote: string): Promise<void> 
     ...activeMailbox,
     note
   };
-  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox);
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
 
   await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: nextMailbox,
-    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox),
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS),
     pendingTextInput: undefined
   }));
 
@@ -272,6 +304,7 @@ async function saveMailboxNote(ctx: BotContext, rawNote: string): Promise<void> 
 async function deleteMailboxNote(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
   await clearPendingTextInput(ctx);
+  const account = await resolveContextAccount(ctx);
 
   if (!ctx.chat || !ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
@@ -292,12 +325,12 @@ async function deleteMailboxNote(ctx: BotContext): Promise<void> {
     ...ctx.session.mailbox,
     note: undefined
   };
-  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox);
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
 
   await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: nextMailbox,
-    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox),
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS),
     pendingTextInput: undefined
   }));
 
@@ -314,6 +347,7 @@ async function deleteMailboxNote(ctx: BotContext): Promise<void> {
 async function resetBrowserSession(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
   await clearPendingTextInput(ctx);
+  await resolveContextAccount(ctx);
 
   if (!ctx.chat || !ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
@@ -342,6 +376,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
   }
 
   const locale = getLocaleFromContext(ctx);
+  await resolveContextAccount(ctx);
   await clearPendingTextInput(ctx);
   if (type !== "generate" && !ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
@@ -373,6 +408,7 @@ async function queueJob(ctx: BotContext, type: MailJobType): Promise<void> {
 
 async function showInbox(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
+  await resolveContextAccount(ctx);
   await clearPendingTextInput(ctx);
   if (!ctx.session.mailbox) {
     await ctx.reply(ctx.t("mailbox_missing"), {
@@ -390,6 +426,7 @@ async function showInbox(ctx: BotContext): Promise<void> {
 
 async function showHistory(ctx: BotContext): Promise<void> {
   const locale = getLocaleFromContext(ctx);
+  await resolveContextAccount(ctx);
   await clearPendingTextInput(ctx);
   const history = ctx.session.mailboxHistory ?? [];
 
@@ -406,6 +443,7 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
 
   const locale = getLocaleFromContext(ctx);
   await clearPendingTextInput(ctx);
+  const account = await resolveContextAccount(ctx);
   const selected = getHistoryItemByIndex(ctx, index);
   if (!selected) {
     await ctx.reply(buildRestoreMissingMessage(locale), {
@@ -415,7 +453,7 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
     return;
   }
 
-  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, selected);
+  const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, selected, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
   await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: selected,
@@ -449,6 +487,7 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
 
 async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void> {
   const locale = getLocaleFromContext(ctx);
+  await resolveContextAccount(ctx);
   await clearPendingTextInput(ctx);
   const selected = getHistoryItemByIndex(ctx, index);
 
@@ -489,6 +528,84 @@ async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void>
     parse_mode: "HTML",
     reply_markup: buildContextMenuKeyboard(ctx, locale)
   });
+}
+
+function parseSetPlanCommand(input: string): { userId: number; plan: "free" | "paid" | "custom"; customHistoryLimit?: number } | undefined {
+  const [userIdText = "", planText = "", limitText] = input.trim().split(/\s+/);
+  const userId = Number(userIdText);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return undefined;
+  }
+
+  if (planText === "free" || planText === "paid") {
+    return { userId, plan: planText };
+  }
+
+  if (planText === "custom") {
+    const customHistoryLimit = Number(limitText);
+    if (!Number.isInteger(customHistoryLimit) || customHistoryLimit < MAX_MAILBOX_HISTORY_ITEMS) {
+      return undefined;
+    }
+
+    return { userId, plan: "custom", customHistoryLimit };
+  }
+
+  return undefined;
+}
+
+async function showPlanStatus(ctx: BotContext): Promise<void> {
+  if (!ctx.from || !ctx.chat) {
+    return;
+  }
+
+  const locale = getLocaleFromContext(ctx);
+  const account = await resolveContextAccount(ctx);
+  if (!account) {
+    return;
+  }
+
+  await ctx.reply(buildAccountStatusMessage(locale, ctx.from.id, account), {
+    parse_mode: "HTML",
+    reply_markup: buildContextMenuKeyboard(ctx, locale)
+  });
+}
+
+async function handleSetPlanCommand(ctx: BotContext): Promise<void> {
+  const locale = getLocaleFromContext(ctx);
+  if (!isAdminAccount(ctx.from?.username)) {
+    await ctx.reply(buildAdminOnlyMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
+    });
+    return;
+  }
+
+  const parsed = parseSetPlanCommand(getCommandArgumentText(ctx));
+  if (!parsed) {
+    await ctx.reply(buildAdminSetPlanUsageMessage(locale), {
+      parse_mode: "HTML",
+      reply_markup: buildContextMenuKeyboard(ctx, locale)
+    });
+    return;
+  }
+
+  const account = await setUserPlan(parsed);
+  await enforceMailboxHistoryLimit(parsed.userId, account.historyLimit).catch(() => undefined);
+
+  await ctx.reply(buildAdminPlanUpdatedMessage(locale, parsed.userId, account), {
+    parse_mode: "HTML",
+    reply_markup: buildContextMenuKeyboard(ctx, locale)
+  });
+
+  if (parsed.userId !== ctx.from?.id) {
+    const targetLocale = locale;
+    const notification = parsed.plan === "free"
+      ? buildPlanExpiredMessage(targetLocale)
+      : buildAccountStatusMessage(targetLocale, parsed.userId, account);
+    await ctx.api.sendMessage(parsed.userId, notification, {
+      parse_mode: "HTML"
+    }).catch(() => undefined);
+  }
 }
 
 function createI18n(): I18n<BotContext> {
@@ -534,7 +651,8 @@ function createBot(): Bot<BotContext> {
   bot.command("start", async (ctx) => {
     const locale = getLocaleFromContext(ctx);
     await clearPendingTextInput(ctx);
-    await ctx.reply(buildStartText(ctx), {
+    await ctx.reply(await buildStartText(ctx), {
+      parse_mode: "HTML",
       reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
   });
@@ -581,6 +699,14 @@ function createBot(): Bot<BotContext> {
     await ctx.reply(ctx.t("language_prompt"), {
       reply_markup: buildLanguageKeyboard(locale)
     });
+  });
+
+  bot.command("plan", async (ctx) => {
+    await showPlanStatus(ctx);
+  });
+
+  bot.command("setplan", async (ctx) => {
+    await handleSetPlanCommand(ctx);
   });
 
   bot.on("message:text", async (ctx) => {
@@ -669,7 +795,8 @@ function createBot(): Bot<BotContext> {
     const locale = getLocaleFromContext(ctx);
     await ctx.answerCallbackQuery();
     await clearPendingTextInput(ctx);
-    await ctx.reply(buildStartText(ctx), {
+    await ctx.reply(await buildStartText(ctx), {
+      parse_mode: "HTML",
       reply_markup: buildContextMenuKeyboard(ctx, locale)
     });
   });

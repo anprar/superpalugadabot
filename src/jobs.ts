@@ -1,4 +1,5 @@
 import { ALLOWED_MAILBOX_DOMAINS } from "./config.js";
+import { getUserAccountById } from "./accounts.js";
 import { getBot } from "./bot.js";
 import { buildMainMenuKeyboard } from "./keyboards.js";
 import {
@@ -147,11 +148,12 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
 
     if (payload.type === "generate") {
       const previousBrowserState = await getBrowserState<BrowserStorageState>(payload.chatId);
+      const account = await getUserAccountById(payload.userId ?? payload.chatId, payload.chatId);
       const result = await runWithInternalRetry(payload, progress, async (attempt) => {
         const state = attempt === 1 ? previousBrowserState : undefined;
         return generateMailbox(state, (stage) => progress.update(stage));
       });
-      const nextSession = await persistMailboxResult(payload.chatId, result);
+      const nextSession = await persistMailboxResult(payload.chatId, result, account.historyLimit);
       await sendResultMessage(
         payload.chatId,
         locale,
@@ -173,11 +175,12 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
     }
 
     const browserState = await getBrowserState<BrowserStorageState>(payload.chatId);
+    const account = await getUserAccountById(payload.userId ?? payload.chatId, payload.chatId);
     const refreshed = await runWithInternalRetry(payload, progress, async (attempt) => {
       const state = attempt === 1 ? browserState : undefined;
       return refreshInbox(session.mailbox!, state, (stage) => progress.update(stage));
     });
-    const nextSession = await persistRefreshResult(payload.chatId, refreshed);
+    const nextSession = await persistRefreshResult(payload.chatId, refreshed, account.historyLimit);
     await sendResultMessage(
       payload.chatId,
       locale,
@@ -236,23 +239,23 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
   }
 }
 
-async function persistMailboxResult(chatId: number, result: ScraperMailboxResult) {
+async function persistMailboxResult(chatId: number, result: ScraperMailboxResult, historyLimit: number) {
   await saveBrowserState(chatId, result.storageState);
   return patchChatSession(chatId, (current) => ({
     ...current,
     mailbox: result.mailbox,
-    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox),
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox, historyLimit),
     inboxCache: result.inboxCache,
     pendingJob: undefined
   }));
 }
 
-async function persistRefreshResult(chatId: number, result: ScraperRefreshResult) {
+async function persistRefreshResult(chatId: number, result: ScraperRefreshResult, historyLimit: number) {
   await saveBrowserState(chatId, result.storageState);
   return patchChatSession(chatId, (current) => ({
     ...current,
     mailbox: result.mailbox,
-    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox),
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox, historyLimit),
     inboxCache: result.inboxCache,
     pendingJob: undefined
   }));

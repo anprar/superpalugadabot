@@ -7,6 +7,7 @@ export type MailJobType = "generate" | "refresh";
 export type InboxSource = "dom" | "json" | "mixed";
 export type PendingTextInputType = "import-email" | "mailbox-note";
 export type MailboxOrigin = "generated" | "imported";
+export type AccountPlan = "free" | "paid" | "custom";
 export type BrowserStorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 
 export interface InboxItem {
@@ -85,6 +86,20 @@ export interface BotSessionData {
   pendingJob?: PendingJobState;
   pendingTextInput?: PendingTextInputState;
   phase2?: Phase2SurveyTask;
+}
+
+export interface UserAccount {
+  userId: number;
+  chatId: number;
+  username?: string;
+  firstName?: string;
+  plan: AccountPlan;
+  historyLimit: number;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  expiresAt?: string;
+  reminderSentAt?: string;
 }
 
 export interface MailJobPayload {

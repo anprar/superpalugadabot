@@ -336,23 +336,7 @@ async function ensureActiveMailbox(page: Page, requestedEmail?: string): Promise
 }
 
 function normalizeInboxFromJson(payload: unknown): InboxItem[] {
-  if (!payload || typeof payload !== "object") {
-    return [];
-  }
-
-  const record = payload as Record<string, unknown>;
-  const emails = Array.isArray(payload)
-    ? payload
-    : Array.isArray(record.emails)
-      ? record.emails
-      : Array.isArray(record.data)
-        ? record.data
-        : Array.isArray(record.messages)
-          ? record.messages
-          : Array.isArray(record.list)
-            ? record.list
-            : [];
-
+  const emails = extractInboxEntries(payload);
   const items: InboxItem[] = [];
 
   emails.forEach((item, index) => {
@@ -398,10 +382,32 @@ function normalizeInboxFromJson(payload: unknown): InboxItem[] {
   return items.slice(0, MAX_INBOX_ITEMS);
 }
 
+function extractInboxEntries(payload: unknown): unknown[] {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const record = payload as Record<string, unknown>;
+  return Array.isArray(payload)
+    ? payload
+    : Array.isArray(record.emails)
+      ? record.emails
+      : Array.isArray(record.data)
+        ? record.data
+        : Array.isArray(record.messages)
+        ? record.messages
+          : Array.isArray(record.list)
+            ? record.list
+            : [];
+}
+
+function countInboxEntries(payload: unknown): number {
+  return extractInboxEntries(payload).length;
+}
+
 async function parseInboxFromDom(page: Page): Promise<InboxItem[]> {
   const items = await page.evaluate((limit) => {
     return Array.from(document.querySelectorAll("#message-list tr"))
-      .slice(0, limit)
       .map((row, index) => {
         const cells = Array.from(row.querySelectorAll("td"));
         const link = row.querySelector("a");
@@ -426,7 +432,8 @@ async function parseInboxFromDom(page: Page): Promise<InboxItem[]> {
           isUnread: row.classList.contains("unread")
         };
       })
-      .filter((item) => Boolean(item.detailUrl) && (item.subject || item.preview || item.sender));
+      .filter((item) => Boolean(item.detailUrl) && (item.subject || item.preview || item.sender))
+      .slice(0, limit);
   }, MAX_INBOX_ITEMS);
 
   return items.map((item) => ({
@@ -435,6 +442,29 @@ async function parseInboxFromDom(page: Page): Promise<InboxItem[]> {
     subject: normalizeLine(item.subject, "No subject"),
     preview: normalizeLine(item.preview, "No preview yet")
   }));
+}
+
+async function reloadAndParseInboxFromDom(
+  page: Page,
+  requestedEmail: string,
+  attempts = 3
+): Promise<InboxItem[]> {
+  const baseDelays = [1_400, 2_600, 4_200];
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const delay = baseDelays[Math.min(attempt, baseDelays.length - 1)];
+    await randomDelay(delay, delay + 350);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
+    await ensureActiveMailbox(page, requestedEmail);
+
+    const items = await parseInboxFromDom(page);
+    if (items.length > 0) {
+      return items;
+    }
+  }
+
+  return [];
 }
 
 function buildInboxCache(items: InboxItem[], source: InboxCache["source"]): InboxCache {
@@ -522,19 +552,17 @@ export async function refreshInbox(
         throw new MailboxExpiredError();
       }
     }
+
     const jsonItems = normalizeInboxFromJson(payload);
     let domItems: InboxItem[] = [];
+    const inboxEntryCount = countInboxEntries(payload);
 
     if (jsonItems.length === 0) {
-      await randomDelay(150, 300);
-      domItems = await parseInboxFromDom(page);
-
-      if (domItems.length === 0) {
-        await page.reload({ waitUntil: "domcontentloaded" });
-        activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
-        await randomDelay(150, 300);
-        domItems = await parseInboxFromDom(page);
-      }
+      domItems = await reloadAndParseInboxFromDom(
+        page,
+        existingMailbox.email,
+        inboxEntryCount > 0 ? 3 : 2
+      );
     }
 
     const items = jsonItems.length > 0 ? jsonItems : domItems;

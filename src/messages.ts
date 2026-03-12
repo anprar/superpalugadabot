@@ -1,4 +1,5 @@
-import type { InboxCache, InboxItem, KoreaProfileSuggestion, MailboxSession, SupportedLocale } from "./types.js";
+import { ADMIN_CONTACT_USERNAME, PAID_SUBSCRIPTION_PRICE_IDR } from "./config.js";
+import type { AccountPlan, InboxCache, InboxItem, KoreaProfileSuggestion, MailboxSession, SupportedLocale, UserAccount } from "./types.js";
 import { escapeHtml, formatBirthDate, formatDateTime, getAgeYears, trimPreview } from "./utils.js";
 
 const COPY: Record<SupportedLocale, Record<string, string>> = {
@@ -18,6 +19,24 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     cityDistrict: "Kota / Kabupaten",
     postalCode: "Kode pos",
     noProfiles: "Belum ada rekomendasi profil.",
+    userId: "ID user",
+    subscriptionStatus: "Status subscription",
+    historyLimit: "Batas riwayat",
+    planExpiresAt: "Aktif sampai",
+    paymentInfo: "Upgrade manual",
+    paymentContactText: "Hubungi admin",
+    pricePerMonth: "Harga",
+    accountTitle: "Status akun",
+    planFree: "Free",
+    planPaid: "Paid",
+    planCustom: "Custom",
+    adminOnly: "Perintah ini hanya untuk admin.",
+    adminSetPlanUsage: "Format: /setplan user_id free | /setplan user_id paid | /setplan user_id custom 100",
+    adminSetPlanDone: "Status akun berhasil diperbarui.",
+    planReminderTitle: "Subscription akan berakhir 7 hari lagi",
+    planReminderBody: "Jika tidak diperpanjang, status akun akan kembali ke Free dan riwayat email akan dipotong ke 8 email terbaru.",
+    planExpiredTitle: "Subscription sudah berakhir",
+    planExpiredBody: "Status akun kembali ke Free. Riwayat email disimpan hanya 8 email terbaru.",
     historyTitle: "Riwayat email",
     historyEmpty: "Belum ada email tersimpan untuk direstore.",
     historyCurrent: "aktif sekarang",
@@ -71,6 +90,24 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     cityDistrict: "City / District",
     postalCode: "Postal code",
     noProfiles: "No profile recommendations yet.",
+    userId: "User ID",
+    subscriptionStatus: "Subscription status",
+    historyLimit: "History limit",
+    planExpiresAt: "Active until",
+    paymentInfo: "Manual upgrade",
+    paymentContactText: "Contact admin",
+    pricePerMonth: "Price",
+    accountTitle: "Account status",
+    planFree: "Free",
+    planPaid: "Paid",
+    planCustom: "Custom",
+    adminOnly: "This command is only available to the admin.",
+    adminSetPlanUsage: "Format: /setplan user_id free | /setplan user_id paid | /setplan user_id custom 100",
+    adminSetPlanDone: "The account status was updated.",
+    planReminderTitle: "Your subscription will end in 7 days",
+    planReminderBody: "If it is not renewed, your account will return to Free and the email history will be reduced to the latest 8 emails.",
+    planExpiredTitle: "Your subscription has ended",
+    planExpiredBody: "Your account has returned to Free. Only the latest 8 emails are kept in history.",
     historyTitle: "Email history",
     historyEmpty: "No saved emails are available to restore.",
     historyCurrent: "current",
@@ -116,6 +153,18 @@ function copy(locale: SupportedLocale, key: string): string {
 
 function renderAllowedDomains(domains: string[]): string {
   return domains.map((domain) => `<code>${escapeHtml(domain)}</code>`).join("\n");
+}
+
+function planLabel(locale: SupportedLocale, plan: AccountPlan): string {
+  return copy(locale, plan === "free" ? "planFree" : plan === "paid" ? "planPaid" : "planCustom");
+}
+
+function formatCurrencyIdr(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0
+  }).format(value);
 }
 
 function renderInboxItems(locale: SupportedLocale, items: InboxItem[]): string {
@@ -235,8 +284,72 @@ export function buildMailboxExpiredMessage(locale: SupportedLocale): string {
   return `<b>${copy(locale, "mailboxExpired")}</b>`;
 }
 
+export function buildWelcomeMessage(locale: SupportedLocale, userId: number, account: UserAccount, startText: string): string {
+  return [
+    escapeHtml(startText),
+    "",
+    `<b>${copy(locale, "accountTitle")}</b>`,
+    `<b>${copy(locale, "userId")}</b> <code>${userId}</code>`,
+    `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
+    `<b>${copy(locale, "historyLimit")}</b> <code>${account.historyLimit}</code>`,
+    account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined,
+    `<b>${copy(locale, "paymentInfo")}</b> ${escapeHtml(copy(locale, "paymentContactText"))} <code>${escapeHtml(ADMIN_CONTACT_USERNAME)}</code>`,
+    `<b>${copy(locale, "pricePerMonth")}</b> <code>${escapeHtml(formatCurrencyIdr(PAID_SUBSCRIPTION_PRICE_IDR))}/30 hari</code>`
+  ].filter(Boolean).join("\n");
+}
+
+export function buildAccountStatusMessage(locale: SupportedLocale, userId: number, account: UserAccount): string {
+  return [
+    `<b>${copy(locale, "accountTitle")}</b>`,
+    "",
+    `<b>${copy(locale, "userId")}</b> <code>${userId}</code>`,
+    `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
+    `<b>${copy(locale, "historyLimit")}</b> <code>${account.historyLimit}</code>`,
+    account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined,
+    `<b>${copy(locale, "paymentInfo")}</b> ${escapeHtml(copy(locale, "paymentContactText"))} <code>${escapeHtml(ADMIN_CONTACT_USERNAME)}</code>`,
+    `<b>${copy(locale, "pricePerMonth")}</b> <code>${escapeHtml(formatCurrencyIdr(PAID_SUBSCRIPTION_PRICE_IDR))}/30 hari</code>`
+  ].filter(Boolean).join("\n");
+}
+
 export function buildWorkerErrorMessage(locale: SupportedLocale): string {
   return `<b>${copy(locale, "genericError")}</b>`;
+}
+
+export function buildAdminOnlyMessage(locale: SupportedLocale): string {
+  return `<b>${copy(locale, "adminOnly")}</b>`;
+}
+
+export function buildAdminSetPlanUsageMessage(locale: SupportedLocale): string {
+  return `<b>${copy(locale, "adminSetPlanUsage")}</b>`;
+}
+
+export function buildAdminPlanUpdatedMessage(locale: SupportedLocale, userId: number, account: UserAccount): string {
+  return [
+    `<b>${copy(locale, "adminSetPlanDone")}</b>`,
+    "",
+    `<b>${copy(locale, "userId")}</b> <code>${userId}</code>`,
+    `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
+    `<b>${copy(locale, "historyLimit")}</b> <code>${account.historyLimit}</code>`,
+    account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined
+  ].filter(Boolean).join("\n");
+}
+
+export function buildPlanReminderMessage(locale: SupportedLocale, account: UserAccount): string {
+  return [
+    `<b>${copy(locale, "planReminderTitle")}</b>`,
+    "",
+    `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
+    account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined,
+    copy(locale, "planReminderBody")
+  ].filter(Boolean).join("\n");
+}
+
+export function buildPlanExpiredMessage(locale: SupportedLocale): string {
+  return [
+    `<b>${copy(locale, "planExpiredTitle")}</b>`,
+    "",
+    copy(locale, "planExpiredBody")
+  ].join("\n");
 }
 
 export function buildHistoryMessage(

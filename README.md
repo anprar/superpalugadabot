@@ -8,6 +8,8 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 - `/generate` untuk membuat email temporary dari `https://www.mailticking.com/`
 - `/import email@domain.com` untuk memasukkan email lama dari MailTicking ke history lalu otomatis dicoba restore
 - `/note teks catatan` untuk menambah atau mengubah catatan pada email aktif
+- `/plan` untuk melihat ID user, status subscription, dan batas riwayat email
+- `/setplan user_id free|paid|custom 100` untuk admin manual mengubah paket user
 - `/refresh` untuk refresh inbox terbaru
 - `/inbox` untuk lihat daftar email subject + preview
 - `/history` untuk melihat riwayat email, restore email lama, dan hapus entry yang dipilih
@@ -17,6 +19,8 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 - saat restore/refresh berjalan bot mengirim progress singkat seperti buka sesi dan ambil inbox
 - ada tombol `Reset Session` untuk membersihkan sesi browser kalau restore terasa macet
 - catatan tersimpan per email, bisa diubah/hapus dari tombol, dan akan ikut tampil saat inbox/email itu dibuka lagi
+- paket `free` menyimpan 8 riwayat email, paket `paid` menyimpan 50 riwayat email selama 30 hari (`Rp25.000`), lalu otomatis kembali ke `free`
+- pengingat H-7 subscription dikirim otomatis lewat cron Vercel, lalu riwayat dipangkas saat masa paid berakhir
 - password saran acak 12 karakter, mudah dibaca, dengan huruf besar, huruf kecil, dan angka
 - nama rekomendasi + tanggal lahir acak dengan umur minimal 25 tahun
 - 1 profil Korea sintetis tersimpan: nama, tanggal lahir, alamat, kota/kabupaten, dan kode pos

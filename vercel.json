@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/subscriptions",
+      "schedule": "0 1 * * *"
+    }
+  ],
   "functions": {
     "api/telegram.ts": {
       "memory": 512,
@@ -7,6 +13,10 @@
     "api/jobs/mailticking.ts": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "api/cron/subscriptions.ts": {
+      "memory": 512,
+      "maxDuration": 10
     }
   }
 }

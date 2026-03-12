@@ -154,6 +154,25 @@ export function mergeMailboxHistory(
   return nextHistory.slice(0, limit);
 }
 
+export function trimMailboxHistory(
+  history: MailboxSession[] | undefined,
+  currentMailbox: MailboxSession | undefined,
+  limit = MAX_MAILBOX_HISTORY_ITEMS
+): MailboxSession[] {
+  if (currentMailbox) {
+    return mergeMailboxHistory(history, currentMailbox, limit);
+  }
+
+  return (history ?? []).slice(0, limit);
+}
+
+export async function enforceMailboxHistoryLimit(chatId: number, limit: number): Promise<BotSessionData> {
+  return patchChatSession(chatId, (current) => ({
+    ...current,
+    mailboxHistory: trimMailboxHistory(current.mailboxHistory, current.mailbox, limit)
+  }));
+}
+
 export function findMailboxInHistory(
   history: MailboxSession[] | undefined,
   email: string

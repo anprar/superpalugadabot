@@ -4,6 +4,13 @@ export const MAILTICKING_URL = "https://www.mailticking.com/";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 export const MAX_INBOX_ITEMS = 10;
 export const MAX_MAILBOX_HISTORY_ITEMS = 8;
+export const PAID_MAILBOX_HISTORY_ITEMS = 50;
+export const PAID_SUBSCRIPTION_PRICE_IDR = 25_000;
+export const PAID_SUBSCRIPTION_DAYS = 30;
+export const PAID_SUBSCRIPTION_REMINDER_DAYS = 7;
+export const ADMIN_CONTACT_USERNAME = "@AndiPradanaAr";
+export const ADMIN_USERNAME = "andipradanaar";
+export const SPECIAL_ADMIN_HISTORY_ITEMS = 100;
 export const MAX_PUBLIC_MAILBOX_ATTEMPTS = 24;
 export const PLAYWRIGHT_DEFAULT_TIMEOUT_MS = 45_000;
 export const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 55_000;
@@ -55,6 +62,10 @@ export function getBotToken(): string {
 
 export function getWebhookSecret(): string | undefined {
   return getEnv("WEBHOOK_SECRET");
+}
+
+export function getCronSecret(): string | undefined {
+  return getEnv("CRON_SECRET");
 }
 
 export function getPublicBaseUrl(): string {
