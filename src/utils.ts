@@ -6,6 +6,62 @@ const EASY_VOWELS = ["a", "e", "i", "o", "u"] as const;
 const EASY_DIGITS = ["2", "3", "4", "5", "6", "7", "8", "9"] as const;
 const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DISPLAY_TIME_ZONE = "Asia/Jakarta";
+const READABLE_MAILBOX_NAMES = [
+  "agus",
+  "bima",
+  "dina",
+  "eka",
+  "fajar",
+  "gina",
+  "hadi",
+  "indah",
+  "joko",
+  "kiki",
+  "lina",
+  "maya",
+  "nanda",
+  "putri",
+  "rama",
+  "rani",
+  "sinta",
+  "tono",
+  "vina",
+  "yusuf"
+] as const;
+const READABLE_MAILBOX_WORDS = [
+  "palu",
+  "buku",
+  "langit",
+  "ombak",
+  "bintang",
+  "cahaya",
+  "hujan",
+  "kopi",
+  "kayu",
+  "batu",
+  "senja",
+  "awan",
+  "tasik",
+  "bukit",
+  "lintas"
+] as const;
+const READABLE_MAILBOX_CITIES = [
+  "jakarta",
+  "surabaya",
+  "bandung",
+  "medan",
+  "makassar",
+  "palu",
+  "jogja",
+  "solo",
+  "malang",
+  "semarang",
+  "balikpapan",
+  "manado",
+  "padang",
+  "pekanbaru",
+  "denpasar"
+] as const;
 const KOREAN_LAST_NAMES = ["Kim", "Lee", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon", "Jang", "Lim"] as const;
 const KOREAN_GIVEN_NAMES = [
   "Minseo",
@@ -113,6 +169,18 @@ export function buildReadablePassword(): string {
 
   const digits = `${pickRandom(EASY_DIGITS)}${pickRandom(EASY_DIGITS)}`;
   return `${buildWord()}${buildWord()}${digits}`;
+}
+
+export function buildReadableMailboxLocalPart(): string {
+  const person = pickRandom(READABLE_MAILBOX_NAMES);
+  const word = pickRandom(READABLE_MAILBOX_WORDS);
+  const city = pickRandom(READABLE_MAILBOX_CITIES);
+  const number = randomBetween(0, 99).toString();
+  return `${person}${word}${city}${number}`;
+}
+
+export function buildReadableMailboxEmail(domains: readonly string[]): string {
+  return `${buildReadableMailboxLocalPart()}@${pickRandom(domains)}`;
 }
 
 export function buildRecommendedName(): string {

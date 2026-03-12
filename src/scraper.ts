@@ -18,7 +18,7 @@ import type {
   ScraperMailboxResult,
   ScraperRefreshResult
 } from "./types.js";
-import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isAllowedMailboxEmail, normalizeEmailAddress, normalizeLine, pickRandom, randomDelay } from "./utils.js";
+import { buildAdultBirthDate, buildKoreanProfile, buildReadableMailboxEmail, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, normalizeLine, pickRandom, randomDelay } from "./utils.js";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
@@ -262,36 +262,53 @@ async function postJson(page: Page, url: string, body: Record<string, unknown>):
   throw new Error(`MailTicking request failed for ${url}: exhausted retries`);
 }
 
-async function generatePublicMailbox(page: Page): Promise<string> {
-  for (let attempt = 0; attempt < MAX_PUBLIC_MAILBOX_ATTEMPTS; attempt += 1) {
-    const payload = await postJson(page, "/get-mailbox", {
-      types: ["4"]
-    });
+async function requestMailboxActivation(page: Page, email: string): Promise<Record<string, unknown>> {
+  return postJson(page, "/activate-email", { email });
+}
 
-    if (payload.success !== true || typeof payload.email !== "string" || !payload.email.includes("@")) {
-      throw new Error("MailTicking did not return a valid public mailbox");
+async function finishMailboxActivation(page: Page): Promise<void> {
+  await randomDelay(700, 1_400);
+  await page.reload({ waitUntil: "domcontentloaded" });
+}
+
+async function tryActivateMailbox(page: Page, email: string): Promise<boolean> {
+  const payload = await requestMailboxActivation(page, email);
+  if (payload.success !== true) {
+    return false;
+  }
+
+  await finishMailboxActivation(page);
+  return true;
+}
+
+async function generatePublicMailbox(page: Page): Promise<string> {
+  const attemptedEmails = new Set<string>();
+
+  for (let attempt = 0; attempt < MAX_PUBLIC_MAILBOX_ATTEMPTS; attempt += 1) {
+    let email = buildReadableMailboxEmail(ALLOWED_MAILBOX_DOMAINS);
+    while (attemptedEmails.has(email)) {
+      email = buildReadableMailboxEmail(ALLOWED_MAILBOX_DOMAINS);
     }
 
-    const email = normalizeEmailAddress(payload.email);
-    if (isAllowedMailboxEmail(email)) {
+    attemptedEmails.add(email);
+    const activated = await tryActivateMailbox(page, email);
+    if (activated) {
       return email;
     }
+
+    await randomDelay(120, 260);
   }
 
   throw new AllowedMailboxUnavailableError(
-    `MailTicking did not return an allowed mailbox after ${MAX_PUBLIC_MAILBOX_ATTEMPTS} attempts. Allowed domains: ${ALLOWED_MAILBOX_DOMAINS.join(", ")}`
+    `MailTicking could not activate a readable mailbox after ${MAX_PUBLIC_MAILBOX_ATTEMPTS} attempts. Allowed domains: ${ALLOWED_MAILBOX_DOMAINS.join(", ")}`
   );
 }
 
 async function activateMailbox(page: Page, email: string): Promise<void> {
-  const payload = await postJson(page, "/activate-email", { email });
-
-  if (payload.success !== true) {
+  const activated = await tryActivateMailbox(page, email);
+  if (!activated) {
     throw new Error(`MailTicking could not activate mailbox ${email}`);
   }
-
-  await randomDelay(700, 1_400);
-  await page.reload({ waitUntil: "domcontentloaded" });
 }
 
 async function ensureActiveMailbox(page: Page, requestedEmail?: string): Promise<{ email: string; code: string }> {
@@ -440,7 +457,6 @@ export async function generateMailbox(
     await openMailTicking(page);
 
     const requestedEmail = await generatePublicMailbox(page);
-    await activateMailbox(page, requestedEmail);
     const activeMailbox = await ensureActiveMailbox(page, requestedEmail);
 
     await onProgress?.("fetching-inbox");

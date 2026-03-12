@@ -12,6 +12,7 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 - `/inbox` untuk lihat daftar email subject + preview
 - `/history` untuk melihat riwayat email, restore email lama, dan hapus entry yang dipilih
 - generate dibatasi ke domain: `rulersonline.com`, `mediaeast.uk`, `mediaholy.com`, `incart.com`, `justdefinition.com`, `gongjua.com`, `123mails.org`
+- local-part email generate dibuat lebih readable dengan pola `nama + kata + kota + nomor`, misalnya `aguspalusurabaya98`
 - import/restore/refresh bisa dipakai untuk email lama dari domain MailTicking lain selama email itu memang masih terdaftar di web
 - saat restore/refresh berjalan bot mengirim progress singkat seperti buka sesi dan ambil inbox
 - ada tombol `Reset Session` untuk membersihkan sesi browser kalau restore terasa macet
