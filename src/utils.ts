@@ -5,6 +5,7 @@ const EASY_CONSONANTS = ["b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", 
 const EASY_VOWELS = ["a", "e", "i", "o", "u"] as const;
 const EASY_DIGITS = ["2", "3", "4", "5", "6", "7", "8", "9"] as const;
 const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DISPLAY_TIME_ZONE = "Asia/Jakarta";
 const KOREAN_LAST_NAMES = ["Kim", "Lee", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon", "Jang", "Lim"] as const;
 const KOREAN_GIVEN_NAMES = [
   "Minseo",
@@ -190,10 +191,13 @@ export function formatDateTime(value: string, locale: SupportedLocale): string {
     return value;
   }
 
-  return date.toLocaleString(locale === "id" ? "id-ID" : "en-US", {
+  const formatted = date.toLocaleString(locale === "id" ? "id-ID" : "en-US", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
+    timeZone: DISPLAY_TIME_ZONE
   });
+
+  return `${formatted} WIB`;
 }
 
 export function trimPreview(value: string, maxLength = 72): string {

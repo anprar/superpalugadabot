@@ -4,6 +4,7 @@ import { buildMainMenuKeyboard } from "./keyboards.js";
 import {
   buildAllowedDomainsBusyMessage,
   buildInboxMessage,
+  buildJobProgressMessage,
   buildMailboxExpiredMessage,
   buildMailboxReadyMessage,
   buildWorkerErrorMessage
@@ -19,6 +20,11 @@ import {
   saveBrowserState
 } from "./sessions.js";
 import type { BrowserStorageState, MailJobPayload, ScraperMailboxResult, ScraperRefreshResult } from "./types.js";
+
+const INTERNAL_RETRY_ATTEMPTS = 2;
+const INTERNAL_RETRY_DELAY_MS = 1_200;
+
+type JobProgressStage = "opening-session" | "fetching-inbox" | "retrying";
 
 function toLoggableError(error: unknown): unknown {
   if (error instanceof Error) {
@@ -53,10 +59,80 @@ function clearPendingJob(payload: MailJobPayload) {
   }));
 }
 
+function waitMs(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+function isRetryableJobError(error: unknown): boolean {
+  return !(error instanceof MailboxExpiredError) && !(error instanceof AllowedMailboxUnavailableError);
+}
+
+function createProgressReporter(chatId: number, locale: MailJobPayload["locale"], email?: string) {
+  let progressMessageId: number | undefined;
+
+  return {
+    async update(stage: JobProgressStage): Promise<void> {
+      const text = buildJobProgressMessage(locale, stage, email);
+
+      try {
+        if (progressMessageId) {
+          await getBot().api.editMessageText(chatId, progressMessageId, text, {
+            parse_mode: "HTML"
+          });
+          return;
+        }
+
+        const message = await getBot().api.sendMessage(chatId, text, {
+          parse_mode: "HTML"
+        });
+        progressMessageId = message.message_id;
+      } catch (error) {
+        console.warn("mail-job-progress-error", toLoggableError(error));
+      }
+    },
+    async clear(): Promise<void> {
+      if (!progressMessageId) {
+        return;
+      }
+
+      await getBot().api.deleteMessage(chatId, progressMessageId).catch(() => undefined);
+    }
+  };
+}
+
+async function runWithInternalRetry<T>(
+  payload: MailJobPayload,
+  progress: ReturnType<typeof createProgressReporter>,
+  operation: (attempt: number) => Promise<T>
+): Promise<T> {
+  for (let attempt = 1; attempt <= INTERNAL_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation(attempt);
+    } catch (error) {
+      if (!isRetryableJobError(error) || attempt >= INTERNAL_RETRY_ATTEMPTS) {
+        throw error;
+      }
+
+      console.warn("mail-job-retry", {
+        chatId: payload.chatId,
+        type: payload.type,
+        attempt,
+        delayMs: INTERNAL_RETRY_DELAY_MS,
+        error: toLoggableError(error)
+      });
+      await progress.update("retrying");
+      await waitMs(INTERNAL_RETRY_DELAY_MS);
+    }
+  }
+
+  throw new Error("Internal retry loop exited unexpectedly");
+}
+
 export async function runMailJob(payload: MailJobPayload): Promise<void> {
   const session = await getChatSession(payload.chatId);
   const locale = session.__language_code ?? payload.locale;
   const startedAt = Date.now();
+  const progress = createProgressReporter(payload.chatId, locale, session.mailbox?.email);
 
   console.info("mail-job-start", {
     chatId: payload.chatId,
@@ -71,7 +147,10 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
 
     if (payload.type === "generate") {
       const previousBrowserState = await getBrowserState<BrowserStorageState>(payload.chatId);
-      const result = await generateMailbox(previousBrowserState);
+      const result = await runWithInternalRetry(payload, progress, async (attempt) => {
+        const state = attempt === 1 ? previousBrowserState : undefined;
+        return generateMailbox(state, (stage) => progress.update(stage));
+      });
       const nextSession = await persistMailboxResult(payload.chatId, result);
       await sendResultMessage(
         payload.chatId,
@@ -94,7 +173,10 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
     }
 
     const browserState = await getBrowserState<BrowserStorageState>(payload.chatId);
-    const refreshed = await refreshInbox(session.mailbox, browserState);
+    const refreshed = await runWithInternalRetry(payload, progress, async (attempt) => {
+      const state = attempt === 1 ? browserState : undefined;
+      return refreshInbox(session.mailbox!, state, (stage) => progress.update(stage));
+    });
     const nextSession = await persistRefreshResult(payload.chatId, refreshed);
     await sendResultMessage(
       payload.chatId,
@@ -148,6 +230,7 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
       )
     });
   } finally {
+    await progress.clear();
     await clearPendingJob(payload);
     await releaseJobLock(payload.chatId, payload.type);
   }

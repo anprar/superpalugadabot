@@ -30,12 +30,16 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     importAllowedDomains: "Domain yang didukung",
     importQueued: "Email berhasil dimasukkan ke history. Bot sedang mencoba restore dan refresh inbox.",
     importInvalidFormat: "Format email tidak valid. Kirim ulang dalam format nama@domain.com.",
+    progressOpeningSession: "Sedang buka sesi MailTicking...",
+    progressFetchingInbox: "Sedang ambil inbox...",
+    progressRetrying: "Percobaan sebelumnya gagal. Bot sedang mencoba ulang sebentar...",
     noteTitle: "Catatan email",
     notePrompt: "Kirim 1 pesan berisi catatan untuk email aktif. Nanti catatan ini akan tampil saat email dibuka.",
     noteSaved: "Catatan berhasil disimpan untuk email aktif.",
     noteInvalid: "Catatan tidak boleh kosong.",
     noteDeleted: "Catatan email berhasil dihapus.",
     noteDeleteMissing: "Email aktif belum punya catatan untuk dihapus.",
+    resetSessionDone: "Sesi browser berhasil direset. Coba refresh atau restore lagi jika tadi terasa macet.",
     importInvalidDomain: "Domain email tidak didukung. Gunakan salah satu domain yang diizinkan.",
     domainRestricted: "Email ini tidak memakai domain yang diizinkan untuk generate atau restore.",
     allowedDomainsBusy: "MailTicking belum mengeluarkan email dari domain yang diizinkan. Coba lagi sebentar.",
@@ -79,12 +83,16 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     importAllowedDomains: "Supported domains",
     importQueued: "The email was saved to history. The bot is now restoring it and refreshing the inbox.",
     importInvalidFormat: "The email format is invalid. Send it again as name@domain.com.",
+    progressOpeningSession: "Opening the MailTicking session...",
+    progressFetchingInbox: "Fetching the inbox...",
+    progressRetrying: "The previous attempt failed. Retrying shortly...",
     noteTitle: "Email note",
     notePrompt: "Send 1 message containing a note for the active email. The note will appear whenever the email is opened.",
     noteSaved: "The note was saved for the active email.",
     noteInvalid: "The note cannot be empty.",
     noteDeleted: "The email note was deleted.",
     noteDeleteMissing: "The active email does not have a note to delete.",
+    resetSessionDone: "The browser session was reset. Try refreshing or restoring again if it was stuck.",
     importInvalidDomain: "That email domain is not supported. Use one of the allowed domains.",
     domainRestricted: "This email does not use an allowed domain for generate or restore.",
     allowedDomainsBusy: "MailTicking is not returning an email from the allowed domains right now. Please try again shortly.",
@@ -288,6 +296,24 @@ export function buildImportInvalidFormatMessage(locale: SupportedLocale): string
   return `<b>${copy(locale, "importInvalidFormat")}</b>`;
 }
 
+export function buildJobProgressMessage(
+  locale: SupportedLocale,
+  stage: "opening-session" | "fetching-inbox" | "retrying",
+  email?: string
+): string {
+  const key = stage === "opening-session"
+    ? "progressOpeningSession"
+    : stage === "fetching-inbox"
+      ? "progressFetchingInbox"
+      : "progressRetrying";
+
+  return [
+    `<b>${copy(locale, key)}</b>`,
+    email ? "" : undefined,
+    email ? `<code>${escapeHtml(email)}</code>` : undefined
+  ].filter(Boolean).join("\n");
+}
+
 export function buildNotePromptMessage(locale: SupportedLocale, email: string): string {
   return [
     `<b>${copy(locale, "noteTitle")}</b>`,
@@ -320,6 +346,14 @@ export function buildNoteDeletedMessage(locale: SupportedLocale, email: string):
 
 export function buildNoteDeleteMissingMessage(locale: SupportedLocale): string {
   return `<b>${copy(locale, "noteDeleteMissing")}</b>`;
+}
+
+export function buildResetSessionDoneMessage(locale: SupportedLocale, email: string): string {
+  return [
+    `<b>${copy(locale, "resetSessionDone")}</b>`,
+    "",
+    `<code>${escapeHtml(email)}</code>`
+  ].join("\n");
 }
 
 export function buildImportInvalidDomainMessage(locale: SupportedLocale, domains: string[]): string {

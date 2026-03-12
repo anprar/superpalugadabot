@@ -101,6 +101,8 @@ async function createBrowserContext(storageState?: BrowserStorageState) {
   return { browser, context };
 }
 
+type ScraperProgressStage = "opening-session" | "fetching-inbox";
+
 async function openMailTicking(page: Page): Promise<void> {
   page.setDefaultTimeout(PLAYWRIGHT_DEFAULT_TIMEOUT_MS);
   page.setDefaultNavigationTimeout(PLAYWRIGHT_NAVIGATION_TIMEOUT_MS);
@@ -426,17 +428,22 @@ function buildInboxCache(items: InboxItem[], source: InboxCache["source"]): Inbo
   };
 }
 
-export async function generateMailbox(previousState?: BrowserStorageState): Promise<ScraperMailboxResult> {
+export async function generateMailbox(
+  previousState?: BrowserStorageState,
+  onProgress?: (stage: ScraperProgressStage) => Promise<void>
+): Promise<ScraperMailboxResult> {
   const { browser, context } = await createBrowserContext(previousState);
 
   try {
     const page = await context.newPage();
+    await onProgress?.("opening-session");
     await openMailTicking(page);
 
     const requestedEmail = await generatePublicMailbox(page);
     await activateMailbox(page, requestedEmail);
     const activeMailbox = await ensureActiveMailbox(page, requestedEmail);
 
+    await onProgress?.("fetching-inbox");
     const inboxItems = await parseInboxFromDom(page);
     const storageState = await context.storageState();
     const now = new Date().toISOString();
@@ -470,11 +477,16 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
   }
 }
 
-export async function refreshInbox(existingMailbox: MailboxSession, storageState?: BrowserStorageState): Promise<ScraperRefreshResult> {
+export async function refreshInbox(
+  existingMailbox: MailboxSession,
+  storageState?: BrowserStorageState,
+  onProgress?: (stage: ScraperProgressStage) => Promise<void>
+): Promise<ScraperRefreshResult> {
   const { browser, context } = await createBrowserContext(storageState);
 
   try {
     const page = await context.newPage();
+    await onProgress?.("opening-session");
     await openMailTicking(page);
 
     let activeMailbox = await ensureActiveMailbox(page, existingMailbox.email);
@@ -482,6 +494,7 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
       throw new MailboxExpiredError();
     }
 
+    await onProgress?.("fetching-inbox");
     let payload = await postJson(page, "/get-emails?lang=en", activeMailbox);
 
     if (payload.needNewEmail) {

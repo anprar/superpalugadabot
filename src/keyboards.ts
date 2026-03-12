@@ -9,6 +9,7 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     addNote: "Tambah Catatan",
     editNote: "Ubah Catatan",
     deleteNote: "Hapus Catatan",
+    resetSession: "Reset Session",
     refresh: "Refresh Inbox",
     inbox: "Lihat Inbox",
     history: "Riwayat Email",
@@ -28,6 +29,7 @@ const LABELS: Record<SupportedLocale, Record<string, string>> = {
     addNote: "Add Note",
     editNote: "Edit Note",
     deleteNote: "Delete Note",
+    resetSession: "Reset Session",
     refresh: "Refresh Inbox",
     inbox: "View Inbox",
     history: "Email History",
@@ -67,7 +69,10 @@ export function buildMainMenuKeyboard(
     .text(label(locale, "import"), "mt:import:open");
 
   if (hasMailbox) {
-    keyboard.row().text(label(locale, "refresh"), "mt:refresh");
+    keyboard
+      .row()
+      .text(label(locale, "refresh"), "mt:refresh")
+      .text(label(locale, "resetSession"), "mt:session:reset");
     keyboard
       .row()
       .text(label(locale, "inbox"), "mt:inbox")

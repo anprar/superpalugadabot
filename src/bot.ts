@@ -5,6 +5,7 @@ import { Bot, session } from "grammy";
 import { MAILTICKING_URL, getBotToken, getSupportedLocale } from "./config.js";
 import { buildHistoryKeyboard, buildImportKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard } from "./keyboards.js";
 import {
+  buildResetSessionDoneMessage,
   buildDeleteCurrentHistoryMessage,
   buildDeleteHistoryDoneMessage,
   buildDeleteHistoryMissingMessage,
@@ -22,7 +23,7 @@ import {
   buildRestoreQueuedMessage
 } from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
-import { createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
+import { clearBrowserState, createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
 import type { BotContext, MailJobType, MailboxSession, SupportedLocale } from "./types.js";
 import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isValidEmailAddress, normalizeEmailAddress } from "./utils.js";
 
@@ -305,6 +306,31 @@ async function deleteMailboxNote(ctx: BotContext): Promise<void> {
   ctx.session.pendingTextInput = undefined;
 
   await ctx.reply(buildNoteDeletedMessage(locale, nextMailbox.email), {
+    parse_mode: "HTML",
+    reply_markup: buildContextMenuKeyboard(ctx, locale, true)
+  });
+}
+
+async function resetBrowserSession(ctx: BotContext): Promise<void> {
+  const locale = getLocaleFromContext(ctx);
+  await clearPendingTextInput(ctx);
+
+  if (!ctx.chat || !ctx.session.mailbox) {
+    await ctx.reply(ctx.t("mailbox_missing"), {
+      reply_markup: buildContextMenuKeyboard(ctx, locale, false)
+    });
+    return;
+  }
+
+  await clearBrowserState(ctx.chat.id);
+  await patchChatSession(ctx.chat.id, (current) => ({
+    ...current,
+    inboxCache: undefined
+  }));
+
+  ctx.session.inboxCache = undefined;
+
+  await ctx.reply(buildResetSessionDoneMessage(locale, ctx.session.mailbox.email), {
     parse_mode: "HTML",
     reply_markup: buildContextMenuKeyboard(ctx, locale, true)
   });
@@ -600,6 +626,11 @@ function createBot(): Bot<BotContext> {
   bot.callbackQuery("mt:note:delete", async (ctx) => {
     await ctx.answerCallbackQuery();
     await deleteMailboxNote(ctx);
+  });
+
+  bot.callbackQuery("mt:session:reset", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await resetBrowserSession(ctx);
   });
 
   bot.callbackQuery("mt:import:open", async (ctx) => {
