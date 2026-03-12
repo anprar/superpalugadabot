@@ -83,6 +83,7 @@ function buildImportedMailbox(email: string, existingMailbox?: MailboxSession): 
     email,
     code: existingMailbox?.code ?? "",
     domain: extractDomain(email),
+    origin: "imported",
     password: existingMailbox?.password ?? buildReadablePassword(),
     koreanProfile,
     identity,

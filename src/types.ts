@@ -6,6 +6,7 @@ export type SupportedLocale = "id" | "en";
 export type MailJobType = "generate" | "refresh";
 export type InboxSource = "dom" | "json" | "mixed";
 export type PendingTextInputType = "import-email";
+export type MailboxOrigin = "generated" | "imported";
 export type BrowserStorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 
 export interface InboxItem {
@@ -46,6 +47,7 @@ export interface MailboxSession {
   email: string;
   code: string;
   domain: string;
+  origin?: MailboxOrigin;
   password: string;
   koreanProfile?: KoreaProfileSuggestion;
   identity?: IdentitySuggestion;

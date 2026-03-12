@@ -442,6 +442,7 @@ export async function generateMailbox(previousState?: BrowserStorageState): Prom
         email: activeMailbox.email,
         code: activeMailbox.code,
         domain,
+        origin: "generated",
         password: buildReadablePassword(),
         koreanProfile,
         identity: {
@@ -524,6 +525,7 @@ export async function refreshInbox(existingMailbox: MailboxSession, storageState
         email: activeMailbox.email,
         code: activeMailbox.code,
         domain: extractDomain(activeMailbox.email),
+        origin: existingMailbox.origin ?? "generated",
         password: existingMailbox.password,
         koreanProfile,
         identity,

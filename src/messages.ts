@@ -136,7 +136,14 @@ function renderKoreanProfile(locale: SupportedLocale, mailbox: MailboxSession): 
 function renderBaseMailbox(locale: SupportedLocale, mailbox: MailboxSession): string {
   const block = [
     `<b>${copy(locale, "email")}</b>`,
-    `<code>${escapeHtml(mailbox.email)}</code>`,
+    `<code>${escapeHtml(mailbox.email)}</code>`
+  ];
+
+  if (mailbox.origin === "imported") {
+    return block.join("\n");
+  }
+
+  block.push(
     "",
     `<b>${copy(locale, "password")}</b>`,
     `<code>${escapeHtml(mailbox.password)}</code>`,
@@ -144,7 +151,7 @@ function renderBaseMailbox(locale: SupportedLocale, mailbox: MailboxSession): st
     "",
     `<b>${copy(locale, "koreanProfile")}</b>`,
     renderKoreanProfile(locale, mailbox)
-  ];
+  );
 
   if (mailbox.virtualCards && mailbox.virtualCards.length > 0) {
     const cardsText = mailbox.virtualCards
