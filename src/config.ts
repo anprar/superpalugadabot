@@ -1,11 +1,12 @@
 import type { ActionPolicy, SupportedLocale } from "./types.js";
 
 export const MAILTICKING_URL = "https://www.mailticking.com/";
+export const FREE_HISTORY_RETENTION_DAYS = 30;
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 export const MAX_INBOX_ITEMS = 10;
 export const MAX_MAILBOX_HISTORY_ITEMS = 8;
 export const PAID_MAILBOX_HISTORY_ITEMS = 50;
-export const PAID_SUBSCRIPTION_PRICE_IDR = 25_000;
+export const PAID_SUBSCRIPTION_PRICE_IDR = 10_000;
 export const PAID_SUBSCRIPTION_DAYS = 30;
 export const PAID_SUBSCRIPTION_REMINDER_DAYS = 7;
 export const ADMIN_CONTACT_USERNAME = "@AndiPradanaAr";

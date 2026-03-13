@@ -3,8 +3,8 @@ import { I18n } from "@grammyjs/i18n";
 import { limit } from "@grammyjs/ratelimiter";
 import { Bot, session } from "grammy";
 import { MAILTICKING_URL, MAX_MAILBOX_HISTORY_ITEMS, getBotToken, getSupportedLocale } from "./config.js";
-import { getUserAccount, isAdminAccount, setUserPlan } from "./accounts.js";
-import { buildHistoryKeyboard, buildImportKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard } from "./keyboards.js";
+import { ensureHistoryRetentionForWrite, getUserAccount, isAdminAccount, setUserPlan } from "./accounts.js";
+import { buildHistoryKeyboard, buildImportKeyboard, buildLanguageKeyboard, buildMainMenuKeyboard, buildProcessingKeyboard, buildSubscriptionKeyboard } from "./keyboards.js";
 import {
   buildAccountStatusMessage,
   buildAdminOnlyMessage,
@@ -27,10 +27,11 @@ import {
   buildPlanExpiredMessage,
   buildRestoreMissingMessage,
   buildRestoreQueuedMessage,
+  buildSubscriptionMessage,
   buildWelcomeMessage
 } from "./messages.js";
 import { enqueueMailJob } from "./queue.js";
-import { clearBrowserState, createInitialSessionData, createSessionStorage, enforceMailboxHistoryLimit, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession } from "./sessions.js";
+import { clearBrowserState, createInitialSessionData, createSessionStorage, findMailboxInHistory, getRedisClient, mergeMailboxHistory, patchChatSession, syncChatSessionWithAccount } from "./sessions.js";
 import type { BotContext, MailJobType, MailboxSession, SupportedLocale, UserAccount } from "./types.js";
 import { buildAdultBirthDate, buildKoreanProfile, buildReadablePassword, buildRecommendedName, extractDomain, generateVirtualCards, isValidEmailAddress, normalizeEmailAddress } from "./utils.js";
 
@@ -63,6 +64,10 @@ function queueRejectedCopy(locale: SupportedLocale, reason: string): string {
     : `The job could not be queued yet: ${reason}`;
 }
 
+function applyContextSessionState(ctx: BotContext, nextSession: Partial<BotContext["session"]>): void {
+  Object.assign(ctx.session, nextSession);
+}
+
 async function resolveContextAccount(ctx: BotContext): Promise<UserAccount | undefined> {
   if (!ctx.from || !ctx.chat) {
     return undefined;
@@ -74,11 +79,29 @@ async function resolveContextAccount(ctx: BotContext): Promise<UserAccount | und
     username: ctx.from.username,
     firstName: ctx.from.first_name
   });
-  const nextSession = await enforceMailboxHistoryLimit(ctx.chat.id, account.historyLimit);
-  ctx.session.mailboxHistory = nextSession.mailboxHistory;
-  ctx.session.mailbox = nextSession.mailbox;
-  ctx.session.inboxCache = nextSession.inboxCache;
+  const nextSession = await syncChatSessionWithAccount(ctx.chat.id, account);
+  applyContextSessionState(ctx, nextSession);
   return account;
+}
+
+async function resolveWritableAccount(ctx: BotContext): Promise<UserAccount | undefined> {
+  const account = await resolveContextAccount(ctx);
+  if (!ctx.from || !ctx.chat || !account) {
+    return account;
+  }
+
+  const nextAccount = await ensureHistoryRetentionForWrite({
+    userId: ctx.from.id,
+    chatId: ctx.chat.id,
+    username: ctx.from.username,
+    firstName: ctx.from.first_name
+  });
+  if (nextAccount.historyRetentionEndsAt !== account.historyRetentionEndsAt) {
+    const nextSession = await syncChatSessionWithAccount(ctx.chat.id, nextAccount);
+    applyContextSessionState(ctx, nextSession);
+  }
+
+  return nextAccount;
 }
 
 async function buildStartText(ctx: BotContext): Promise<string> {
@@ -98,9 +121,10 @@ function buildContextMenuKeyboard(
   ctx: BotContext,
   locale: SupportedLocale,
   hasMailbox = Boolean(ctx.session.mailbox),
-  hasHistoryValue = hasHistory(ctx)
+  hasHistoryValue = hasHistory(ctx),
+  highlightSubscription = false
 ) {
-  return buildMainMenuKeyboard(locale, hasMailbox, hasHistoryValue, Boolean(ctx.session.mailbox?.note));
+  return buildMainMenuKeyboard(locale, hasMailbox, hasHistoryValue, Boolean(ctx.session.mailbox?.note), highlightSubscription);
 }
 
 function getHistoryItemByIndex(ctx: BotContext, index: number): MailboxSession | undefined {
@@ -203,7 +227,7 @@ async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
   }
 
   const locale = getLocaleFromContext(ctx);
-  const account = await resolveContextAccount(ctx);
+  const account = await resolveWritableAccount(ctx);
   const email = normalizeEmailAddress(rawEmail);
 
   if (!isValidEmailAddress(email)) {
@@ -220,7 +244,7 @@ async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
   const importedMailbox = buildImportedMailbox(email, existingMailbox);
   const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, importedMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
 
-  await patchChatSession(ctx.chat.id, (current) => ({
+  const nextSession = await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: importedMailbox,
     mailboxHistory: nextHistory,
@@ -228,10 +252,7 @@ async function importMailbox(ctx: BotContext, rawEmail: string): Promise<void> {
     pendingTextInput: undefined
   }));
 
-  ctx.session.mailbox = importedMailbox;
-  ctx.session.mailboxHistory = nextHistory;
-  ctx.session.inboxCache = undefined;
-  ctx.session.pendingTextInput = undefined;
+  applyContextSessionState(ctx, nextSession);
 
   await ctx.reply(buildImportQueuedMessage(locale, email), {
     parse_mode: "HTML",
@@ -284,16 +305,14 @@ async function saveMailboxNote(ctx: BotContext, rawNote: string): Promise<void> 
   };
   const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
 
-  await patchChatSession(ctx.chat.id, (current) => ({
+  const nextSession = await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: nextMailbox,
     mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS),
     pendingTextInput: undefined
   }));
 
-  ctx.session.mailbox = nextMailbox;
-  ctx.session.mailboxHistory = nextHistory;
-  ctx.session.pendingTextInput = undefined;
+  applyContextSessionState(ctx, nextSession);
 
   await ctx.reply(buildNoteSavedMessage(locale, nextMailbox.email), {
     parse_mode: "HTML",
@@ -327,16 +346,14 @@ async function deleteMailboxNote(ctx: BotContext): Promise<void> {
   };
   const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
 
-  await patchChatSession(ctx.chat.id, (current) => ({
+  const nextSession = await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: nextMailbox,
     mailboxHistory: mergeMailboxHistory(current.mailboxHistory, nextMailbox, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS),
     pendingTextInput: undefined
   }));
 
-  ctx.session.mailbox = nextMailbox;
-  ctx.session.mailboxHistory = nextHistory;
-  ctx.session.pendingTextInput = undefined;
+  applyContextSessionState(ctx, nextSession);
 
   await ctx.reply(buildNoteDeletedMessage(locale, nextMailbox.email), {
     parse_mode: "HTML",
@@ -357,12 +374,12 @@ async function resetBrowserSession(ctx: BotContext): Promise<void> {
   }
 
   await clearBrowserState(ctx.chat.id);
-  await patchChatSession(ctx.chat.id, (current) => ({
+  const nextSession = await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     inboxCache: undefined
   }));
 
-  ctx.session.inboxCache = undefined;
+  applyContextSessionState(ctx, nextSession);
 
   await ctx.reply(buildResetSessionDoneMessage(locale, ctx.session.mailbox.email), {
     parse_mode: "HTML",
@@ -454,16 +471,14 @@ async function restoreMailbox(ctx: BotContext, index: number): Promise<void> {
   }
 
   const nextHistory = mergeMailboxHistory(ctx.session.mailboxHistory, selected, account?.historyLimit ?? MAX_MAILBOX_HISTORY_ITEMS);
-  await patchChatSession(ctx.chat.id, (current) => ({
+  const nextSession = await patchChatSession(ctx.chat.id, (current) => ({
     ...current,
     mailbox: selected,
     mailboxHistory: nextHistory,
     inboxCache: undefined
   }));
 
-  ctx.session.mailbox = selected;
-  ctx.session.mailboxHistory = nextHistory;
-  ctx.session.inboxCache = undefined;
+  applyContextSessionState(ctx, nextSession);
 
   await ctx.reply(buildRestoreQueuedMessage(locale, selected.email), {
     parse_mode: "HTML",
@@ -511,13 +526,12 @@ async function deleteHistoryEntry(ctx: BotContext, index: number): Promise<void>
 
   const nextHistory = (ctx.session.mailboxHistory ?? []).filter((_, historyIndex) => historyIndex !== index);
   if (ctx.chat) {
-    await patchChatSession(ctx.chat.id, (current) => ({
+    const nextSession = await patchChatSession(ctx.chat.id, (current) => ({
       ...current,
       mailboxHistory: nextHistory
     }));
+    applyContextSessionState(ctx, nextSession);
   }
-
-  ctx.session.mailboxHistory = nextHistory;
 
   await ctx.answerCallbackQuery({ text: locale === "id" ? "History dihapus" : "History deleted" });
   await ctx.editMessageText(buildHistoryMessage(locale, nextHistory, ctx.session.mailbox?.email), {
@@ -564,9 +578,28 @@ async function showPlanStatus(ctx: BotContext): Promise<void> {
     return;
   }
 
+  await clearPendingTextInput(ctx);
   await ctx.reply(buildAccountStatusMessage(locale, ctx.from.id, account), {
     parse_mode: "HTML",
-    reply_markup: buildContextMenuKeyboard(ctx, locale)
+    reply_markup: buildSubscriptionKeyboard(locale, ctx.from.id, ctx.from.username)
+  });
+}
+
+async function openSubscription(ctx: BotContext): Promise<void> {
+  if (!ctx.from || !ctx.chat) {
+    return;
+  }
+
+  const locale = getLocaleFromContext(ctx);
+  const account = await resolveContextAccount(ctx);
+  if (!account) {
+    return;
+  }
+
+  await clearPendingTextInput(ctx);
+  await ctx.reply(buildSubscriptionMessage(locale, ctx.from.id, account), {
+    parse_mode: "HTML",
+    reply_markup: buildSubscriptionKeyboard(locale, ctx.from.id, ctx.from.username)
   });
 }
 
@@ -590,7 +623,10 @@ async function handleSetPlanCommand(ctx: BotContext): Promise<void> {
   }
 
   const account = await setUserPlan(parsed);
-  await enforceMailboxHistoryLimit(parsed.userId, account.historyLimit).catch(() => undefined);
+  const nextSession = await syncChatSessionWithAccount(account.chatId, account).catch(() => undefined);
+  if (account.chatId === ctx.chat?.id && nextSession) {
+    applyContextSessionState(ctx, nextSession);
+  }
 
   await ctx.reply(buildAdminPlanUpdatedMessage(locale, parsed.userId, account), {
     parse_mode: "HTML",
@@ -653,7 +689,7 @@ function createBot(): Bot<BotContext> {
     await clearPendingTextInput(ctx);
     await ctx.reply(await buildStartText(ctx), {
       parse_mode: "HTML",
-      reply_markup: buildContextMenuKeyboard(ctx, locale)
+      reply_markup: buildContextMenuKeyboard(ctx, locale, Boolean(ctx.session.mailbox), hasHistory(ctx), true)
     });
   });
 
@@ -705,6 +741,10 @@ function createBot(): Bot<BotContext> {
     await showPlanStatus(ctx);
   });
 
+  bot.command("subscription", async (ctx) => {
+    await openSubscription(ctx);
+  });
+
   bot.command("setplan", async (ctx) => {
     await handleSetPlanCommand(ctx);
   });
@@ -742,6 +782,11 @@ function createBot(): Bot<BotContext> {
   bot.callbackQuery("mt:history", async (ctx) => {
     await ctx.answerCallbackQuery();
     await showHistory(ctx);
+  });
+
+  bot.callbackQuery("mt:subscription:open", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await openSubscription(ctx);
   });
 
   bot.callbackQuery("mt:note:open", async (ctx) => {
@@ -797,7 +842,7 @@ function createBot(): Bot<BotContext> {
     await clearPendingTextInput(ctx);
     await ctx.reply(await buildStartText(ctx), {
       parse_mode: "HTML",
-      reply_markup: buildContextMenuKeyboard(ctx, locale)
+      reply_markup: buildContextMenuKeyboard(ctx, locale, Boolean(ctx.session.mailbox), hasHistory(ctx), true)
     });
   });
 

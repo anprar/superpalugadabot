@@ -19,13 +19,13 @@ Telegram bot serverless dengan `grammY`, `TypeScript`, `Playwright`, Vercel Func
 - saat restore/refresh berjalan bot mengirim progress singkat seperti buka sesi dan ambil inbox
 - ada tombol `Reset Session` untuk membersihkan sesi browser kalau restore terasa macet
 - catatan tersimpan per email, bisa diubah/hapus dari tombol, dan akan ikut tampil saat inbox/email itu dibuka lagi
-- paket `free` menyimpan 8 riwayat email, paket `paid` menyimpan 50 riwayat email selama 30 hari (`Rp25.000`), lalu otomatis kembali ke `free`
-- pengingat H-7 subscription dikirim otomatis lewat cron Vercel, lalu riwayat dipangkas saat masa paid berakhir
+- paket `free` menyimpan 8 riwayat email dengan masa simpan 30 hari, paket `paid` menyimpan 50 riwayat email selama 30 hari (`Rp10.000`) tanpa batas waktu simpan history selama subscription aktif, lalu otomatis kembali ke `free`
+- pengingat H-7 subscription dikirim otomatis lewat cron Vercel; saat masa paid berakhir akun kembali ke `free`, riwayat dipangkas ke batas free, lalu masa simpan history dihitung lagi 30 hari sejak tanggal berakhir
 - password saran acak 12 karakter, mudah dibaca, dengan huruf besar, huruf kecil, dan angka
 - nama rekomendasi + tanggal lahir acak dengan umur minimal 25 tahun
 - 1 profil Korea sintetis tersimpan: nama, tanggal lahir, alamat, kota/kabupaten, dan kode pos
 - rate limit dan session per user
-- auto-expire data mailbox dan history setelah 30 hari via Redis TTL
+- data history free auto-expire setelah 30 hari, sedangkan history paid tidak memakai batas waktu simpan selama subscription aktif
 - ID/EN language toggle
 
 ## Arsitektur
@@ -143,7 +143,7 @@ curl -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook"
 - runtime production menggunakan `playwright-core` + `@sparticuz/chromium`
 - library `playwright` juga dipasang untuk local browser install dan config file
 - MailTicking dapat berubah sewaktu-waktu. Parser dibuat defensif, tapi jika markup endpoint berubah besar, update scraper mungkin tetap diperlukan
-- TTL Redis 30 hari menggantikan cron cleanup sehingga mailbox session dan history akan terhapus otomatis
+- session free mengikuti masa simpan history 30 hari, sedangkan history paid disimpan tanpa batas waktu sampai subscription berakhir
 
 ## Phase 2 hooks yang sudah disiapkan
 

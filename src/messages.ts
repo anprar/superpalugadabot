@@ -1,4 +1,4 @@
-import { ADMIN_CONTACT_USERNAME, PAID_SUBSCRIPTION_PRICE_IDR } from "./config.js";
+import { ADMIN_CONTACT_USERNAME, FREE_HISTORY_RETENTION_DAYS, PAID_SUBSCRIPTION_DAYS, PAID_SUBSCRIPTION_PRICE_IDR } from "./config.js";
 import type { AccountPlan, InboxCache, InboxItem, KoreaProfileSuggestion, MailboxSession, SupportedLocale, UserAccount } from "./types.js";
 import { escapeHtml, formatBirthDate, formatDateTime, getAgeYears, trimPreview } from "./utils.js";
 
@@ -22,11 +22,19 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     userId: "ID user",
     subscriptionStatus: "Status subscription",
     historyLimit: "Batas riwayat",
+    historyRetention: "Penyimpanan history",
+    historyRetentionUntil: "Tersimpan sampai",
+    historyRetentionUnlimited: "Tanpa batas selama subscription aktif",
+    historyRetentionRules: "Aturan history",
+    historyRetentionRulesBody: "Free menyimpan history 30 hari. Saat subscription aktif, history tidak punya batas waktu simpan. Jika subscription tidak diperpanjang, akun kembali ke Free dan masa simpan 30 hari dihitung dari tanggal subscription berakhir.",
     planExpiresAt: "Aktif sampai",
     paymentInfo: "Upgrade manual",
     paymentContactText: "Hubungi admin",
     pricePerMonth: "Harga",
     accountTitle: "Status akun",
+    subscriptionTitle: "Subscription bot",
+    subscriptionPrompt: "Paket yang tersedia hanya 1. Klik tombol di bawah untuk buka chat admin dan salin pesan siap kirim.",
+    subscriptionPackage: "Paket",
     planFree: "Free",
     planPaid: "Paid",
     planCustom: "Custom",
@@ -34,9 +42,9 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     adminSetPlanUsage: "Format: /setplan user_id free | /setplan user_id paid | /setplan user_id custom 100",
     adminSetPlanDone: "Status akun berhasil diperbarui.",
     planReminderTitle: "Subscription akan berakhir 7 hari lagi",
-    planReminderBody: "Jika tidak diperpanjang, status akun akan kembali ke Free dan riwayat email akan dipotong ke 8 email terbaru.",
+    planReminderBody: "Jika tidak diperpanjang, status akun akan kembali ke Free, batas riwayat kembali ke 8 email terbaru, dan masa simpan history Free dihitung 30 hari dari tanggal subscription berakhir.",
     planExpiredTitle: "Subscription sudah berakhir",
-    planExpiredBody: "Status akun kembali ke Free. Riwayat email disimpan hanya 8 email terbaru.",
+    planExpiredBody: "Status akun kembali ke Free. History disimpan maksimal 8 email terbaru selama 30 hari sejak subscription berakhir.",
     historyTitle: "Riwayat email",
     historyEmpty: "Belum ada email tersimpan untuk direstore.",
     historyCurrent: "aktif sekarang",
@@ -45,11 +53,11 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     restoreQueued: "Email lama berhasil dipilih. Bot sedang mencoba restore dan refresh inbox.",
     restoreMissing: "Email tersebut tidak ditemukan di riwayat.",
     importTitle: "Input email sendiri",
-    importPrompt: "Kirim 1 alamat email MailTicking yang pernah kamu buat. Domain apa pun boleh selama memang terdaftar di web.",
+    importPrompt: "Kirim 1 alamat email yang pernah kamu buat sebelumnya. Domain apa pun boleh selama email itu masih bisa direstore.",
     importAllowedDomains: "Domain yang didukung",
     importQueued: "Email berhasil dimasukkan ke history. Bot sedang mencoba restore dan refresh inbox.",
     importInvalidFormat: "Format email tidak valid. Kirim ulang dalam format nama@domain.com.",
-    progressOpeningSession: "Sedang buka sesi MailTicking...",
+    progressOpeningSession: "Sedang menyiapkan sesi email...",
     progressFetchingInbox: "Sedang ambil inbox...",
     progressRetrying: "Percobaan sebelumnya gagal. Bot sedang mencoba ulang sebentar...",
     noteTitle: "Catatan email",
@@ -61,7 +69,7 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     resetSessionDone: "Sesi browser berhasil direset. Coba refresh atau restore lagi jika tadi terasa macet.",
     importInvalidDomain: "Domain email tidak didukung. Gunakan salah satu domain yang diizinkan.",
     domainRestricted: "Email ini tidak memakai domain yang diizinkan untuk generate atau restore.",
-    allowedDomainsBusy: "MailTicking belum mengeluarkan email dari domain yang diizinkan. Coba lagi sebentar.",
+    allowedDomainsBusy: "Belum ada email dari domain yang diizinkan. Coba lagi sebentar.",
     deleteDone: "Email berhasil dihapus dari riwayat.",
     deleteMissing: "Email yang ingin dihapus tidak ditemukan di riwayat.",
     deleteCurrent: "Email aktif tidak bisa dihapus dari riwayat. Ganti email aktif dulu.",
@@ -93,11 +101,19 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     userId: "User ID",
     subscriptionStatus: "Subscription status",
     historyLimit: "History limit",
+    historyRetention: "History retention",
+    historyRetentionUntil: "Stored until",
+    historyRetentionUnlimited: "Unlimited while the subscription is active",
+    historyRetentionRules: "History rules",
+    historyRetentionRulesBody: "Free keeps email history for 30 days. While the subscription is active, history has no storage time limit. If the subscription is not renewed, the account returns to Free and the 30-day retention window starts again from the subscription end date.",
     planExpiresAt: "Active until",
     paymentInfo: "Manual upgrade",
     paymentContactText: "Contact admin",
     pricePerMonth: "Price",
     accountTitle: "Account status",
+    subscriptionTitle: "Bot subscription",
+    subscriptionPrompt: "Only 1 package is available. Use the buttons below to open the admin chat and copy a ready-to-send message.",
+    subscriptionPackage: "Package",
     planFree: "Free",
     planPaid: "Paid",
     planCustom: "Custom",
@@ -105,9 +121,9 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     adminSetPlanUsage: "Format: /setplan user_id free | /setplan user_id paid | /setplan user_id custom 100",
     adminSetPlanDone: "The account status was updated.",
     planReminderTitle: "Your subscription will end in 7 days",
-    planReminderBody: "If it is not renewed, your account will return to Free and the email history will be reduced to the latest 8 emails.",
+    planReminderBody: "If it is not renewed, your account will return to Free, the history limit will go back to the latest 8 emails, and the Free retention window will start counting 30 days from the subscription end date.",
     planExpiredTitle: "Your subscription has ended",
-    planExpiredBody: "Your account has returned to Free. Only the latest 8 emails are kept in history.",
+    planExpiredBody: "Your account has returned to Free. Up to the latest 8 emails are kept in history for 30 days after the subscription ends.",
     historyTitle: "Email history",
     historyEmpty: "No saved emails are available to restore.",
     historyCurrent: "current",
@@ -116,11 +132,11 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     restoreQueued: "The older email was selected. The bot is now restoring it and refreshing the inbox.",
     restoreMissing: "That email was not found in history.",
     importTitle: "Add your own email",
-    importPrompt: "Send 1 MailTicking email address you created before. Any domain is allowed as long as it is registered on the site.",
+    importPrompt: "Send 1 email address you created before. Any domain is allowed as long as the email can still be restored.",
     importAllowedDomains: "Supported domains",
     importQueued: "The email was saved to history. The bot is now restoring it and refreshing the inbox.",
     importInvalidFormat: "The email format is invalid. Send it again as name@domain.com.",
-    progressOpeningSession: "Opening the MailTicking session...",
+    progressOpeningSession: "Preparing the email session...",
     progressFetchingInbox: "Fetching the inbox...",
     progressRetrying: "The previous attempt failed. Retrying shortly...",
     noteTitle: "Email note",
@@ -132,7 +148,7 @@ const COPY: Record<SupportedLocale, Record<string, string>> = {
     resetSessionDone: "The browser session was reset. Try refreshing or restoring again if it was stuck.",
     importInvalidDomain: "That email domain is not supported. Use one of the allowed domains.",
     domainRestricted: "This email does not use an allowed domain for generate or restore.",
-    allowedDomainsBusy: "MailTicking is not returning an email from the allowed domains right now. Please try again shortly.",
+    allowedDomainsBusy: "No email is currently available from the allowed domains. Please try again shortly.",
     deleteDone: "The email was removed from history.",
     deleteMissing: "The email to remove was not found in history.",
     deleteCurrent: "The active email cannot be removed from history. Switch active email first.",
@@ -165,6 +181,54 @@ function formatCurrencyIdr(value: number): string {
     currency: "IDR",
     maximumFractionDigits: 0
   }).format(value);
+}
+
+function formatRetentionWindow(locale: SupportedLocale): string {
+  return locale === "id"
+    ? `${FREE_HISTORY_RETENTION_DAYS} hari`
+    : `${FREE_HISTORY_RETENTION_DAYS} days`;
+}
+
+function formatSubscriptionWindow(locale: SupportedLocale): string {
+  if (PAID_SUBSCRIPTION_DAYS === 30) {
+    return locale === "id" ? "1 bulan" : "1 month";
+  }
+
+  return locale === "id"
+    ? `${PAID_SUBSCRIPTION_DAYS} hari`
+    : `${PAID_SUBSCRIPTION_DAYS} days`;
+}
+
+function formatSubscriptionPackage(locale: SupportedLocale): string {
+  return locale === "id"
+    ? `Subscription Bot ${formatSubscriptionWindow(locale)}`
+    : `Bot Subscription ${formatSubscriptionWindow(locale)}`;
+}
+
+function formatHistoryRetention(locale: SupportedLocale, account: UserAccount): string {
+  if (account.plan !== "free") {
+    return copy(locale, "historyRetentionUnlimited");
+  }
+
+  const windowText = formatRetentionWindow(locale);
+  if (!account.historyRetentionEndsAt) {
+    return windowText;
+  }
+
+  return `${windowText} (${copy(locale, "historyRetentionUntil")}: ${formatDateTime(account.historyRetentionEndsAt, locale)})`;
+}
+
+function renderAccountDetails(locale: SupportedLocale, userId: number, account: UserAccount): string[] {
+  return [
+    `<b>${copy(locale, "userId")}</b> <code>${userId}</code>`,
+    `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
+    `<b>${copy(locale, "historyLimit")}</b> <code>${account.historyLimit}</code>`,
+    `<b>${copy(locale, "historyRetention")}</b> ${escapeHtml(formatHistoryRetention(locale, account))}`,
+    account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined,
+    `<b>${copy(locale, "historyRetentionRules")}</b> ${escapeHtml(copy(locale, "historyRetentionRulesBody"))}`,
+    `<b>${copy(locale, "paymentInfo")}</b> ${escapeHtml(copy(locale, "paymentContactText"))} <code>${escapeHtml(ADMIN_CONTACT_USERNAME)}</code>`,
+    `<b>${copy(locale, "pricePerMonth")}</b> <code>${escapeHtml(formatCurrencyIdr(PAID_SUBSCRIPTION_PRICE_IDR))}/${escapeHtml(formatSubscriptionWindow(locale))}</code>`
+  ].filter(Boolean) as string[];
 }
 
 function renderInboxItems(locale: SupportedLocale, items: InboxItem[]): string {
@@ -289,12 +353,7 @@ export function buildWelcomeMessage(locale: SupportedLocale, userId: number, acc
     escapeHtml(startText),
     "",
     `<b>${copy(locale, "accountTitle")}</b>`,
-    `<b>${copy(locale, "userId")}</b> <code>${userId}</code>`,
-    `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
-    `<b>${copy(locale, "historyLimit")}</b> <code>${account.historyLimit}</code>`,
-    account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined,
-    `<b>${copy(locale, "paymentInfo")}</b> ${escapeHtml(copy(locale, "paymentContactText"))} <code>${escapeHtml(ADMIN_CONTACT_USERNAME)}</code>`,
-    `<b>${copy(locale, "pricePerMonth")}</b> <code>${escapeHtml(formatCurrencyIdr(PAID_SUBSCRIPTION_PRICE_IDR))}/30 hari</code>`
+    ...renderAccountDetails(locale, userId, account)
   ].filter(Boolean).join("\n");
 }
 
@@ -302,12 +361,7 @@ export function buildAccountStatusMessage(locale: SupportedLocale, userId: numbe
   return [
     `<b>${copy(locale, "accountTitle")}</b>`,
     "",
-    `<b>${copy(locale, "userId")}</b> <code>${userId}</code>`,
-    `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
-    `<b>${copy(locale, "historyLimit")}</b> <code>${account.historyLimit}</code>`,
-    account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined,
-    `<b>${copy(locale, "paymentInfo")}</b> ${escapeHtml(copy(locale, "paymentContactText"))} <code>${escapeHtml(ADMIN_CONTACT_USERNAME)}</code>`,
-    `<b>${copy(locale, "pricePerMonth")}</b> <code>${escapeHtml(formatCurrencyIdr(PAID_SUBSCRIPTION_PRICE_IDR))}/30 hari</code>`
+    ...renderAccountDetails(locale, userId, account)
   ].filter(Boolean).join("\n");
 }
 
@@ -330,7 +384,19 @@ export function buildAdminPlanUpdatedMessage(locale: SupportedLocale, userId: nu
     `<b>${copy(locale, "userId")}</b> <code>${userId}</code>`,
     `<b>${copy(locale, "subscriptionStatus")}</b> <code>${escapeHtml(planLabel(locale, account.plan))}</code>`,
     `<b>${copy(locale, "historyLimit")}</b> <code>${account.historyLimit}</code>`,
+    `<b>${copy(locale, "historyRetention")}</b> ${escapeHtml(formatHistoryRetention(locale, account))}`,
     account.expiresAt ? `<b>${copy(locale, "planExpiresAt")}</b> ${escapeHtml(formatDateTime(account.expiresAt, locale))}` : undefined
+  ].filter(Boolean).join("\n");
+}
+
+export function buildSubscriptionMessage(locale: SupportedLocale, userId: number, account: UserAccount): string {
+  return [
+    `<b>${copy(locale, "subscriptionTitle")}</b>`,
+    "",
+    copy(locale, "subscriptionPrompt"),
+    `<b>${copy(locale, "subscriptionPackage")}</b> <code>${escapeHtml(formatSubscriptionPackage(locale))}</code>`,
+    "",
+    ...renderAccountDetails(locale, userId, account)
   ].filter(Boolean).join("\n");
 }
 

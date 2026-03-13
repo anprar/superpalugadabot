@@ -1,6 +1,6 @@
 import { Redis } from "@upstash/redis";
 import type { StorageAdapter } from "grammy";
-import type { BotSessionData, InboxCache, MailJobType, MailboxSession } from "./types.js";
+import type { BotSessionData, InboxCache, MailJobType, MailboxSession, UserAccount } from "./types.js";
 import { getRedisConfig, MAX_MAILBOX_HISTORY_ITEMS, SESSION_TTL_SECONDS } from "./config.js";
 
 const SESSION_PREFIX = "mt:session:";
@@ -42,19 +42,68 @@ export function createInitialSessionData(): BotSessionData {
   return {};
 }
 
+function hasExpiredHistoryRetention(value?: string | null, now = Date.now()): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const expiresAt = new Date(value).getTime();
+  return !Number.isNaN(expiresAt) && expiresAt <= now;
+}
+
+function normalizeSessionData(value: BotSessionData): BotSessionData {
+  if (!hasExpiredHistoryRetention(value.historyRetentionEndsAt)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    mailbox: undefined,
+    mailboxHistory: undefined,
+    inboxCache: undefined,
+    pendingJob: undefined
+  };
+}
+
+function getSessionTtlSeconds(value: BotSessionData): number | undefined {
+  if (value.historyRetentionEndsAt === null) {
+    return undefined;
+  }
+
+  if (value.historyRetentionEndsAt) {
+    const expiresAt = new Date(value.historyRetentionEndsAt).getTime();
+    if (!Number.isNaN(expiresAt) && expiresAt > Date.now()) {
+      return Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000));
+    }
+  }
+
+  return SESSION_TTL_SECONDS;
+}
+
+async function writeSessionValue(key: string, value: BotSessionData | undefined): Promise<void> {
+  if (value === undefined) {
+    await getRedisClient().del(key);
+    return;
+  }
+
+  const normalized = normalizeSessionData(value);
+  const ttlSeconds = getSessionTtlSeconds(normalized);
+  if (ttlSeconds === undefined) {
+    await getRedisClient().set(key, normalized);
+    return;
+  }
+
+  await getRedisClient().set(key, normalized, { ex: ttlSeconds });
+}
+
 export function createSessionStorage(): StorageAdapter<BotSessionData> {
   return {
     read: async (key) => {
       const data = await getRedisClient().get<BotSessionData>(sessionKey(key));
-      return data ?? undefined;
+      return data ? normalizeSessionData(data) : undefined;
     },
     write: async (key, value) => {
-      if (value === undefined) {
-        await getRedisClient().del(sessionKey(key));
-        return;
-      }
-
-      await getRedisClient().set(sessionKey(key), value, { ex: SESSION_TTL_SECONDS });
+      await writeSessionValue(sessionKey(key), value);
     },
     delete: async (key) => {
       await getRedisClient().del(sessionKey(key));
@@ -64,11 +113,11 @@ export function createSessionStorage(): StorageAdapter<BotSessionData> {
 
 export async function getChatSession(chatId: number): Promise<BotSessionData> {
   const session = await getRedisClient().get<BotSessionData>(sessionKey(chatId));
-  return session ?? createInitialSessionData();
+  return session ? normalizeSessionData(session) : createInitialSessionData();
 }
 
 export async function saveChatSession(chatId: number, data: BotSessionData): Promise<void> {
-  await getRedisClient().set(sessionKey(chatId), data, { ex: SESSION_TTL_SECONDS });
+  await writeSessionValue(sessionKey(chatId), data);
 }
 
 export async function patchChatSession(
@@ -76,7 +125,7 @@ export async function patchChatSession(
   updater: (current: BotSessionData) => BotSessionData
 ): Promise<BotSessionData> {
   const current = await getChatSession(chatId);
-  const next = updater(current);
+  const next = normalizeSessionData(updater(current));
   await saveChatSession(chatId, next);
   return next;
 }
@@ -170,6 +219,17 @@ export async function enforceMailboxHistoryLimit(chatId: number, limit: number):
   return patchChatSession(chatId, (current) => ({
     ...current,
     mailboxHistory: trimMailboxHistory(current.mailboxHistory, current.mailbox, limit)
+  }));
+}
+
+export async function syncChatSessionWithAccount(
+  chatId: number,
+  account: Pick<UserAccount, "historyLimit" | "historyRetentionEndsAt">
+): Promise<BotSessionData> {
+  return patchChatSession(chatId, (current) => ({
+    ...current,
+    historyRetentionEndsAt: account.historyRetentionEndsAt ?? null,
+    mailboxHistory: trimMailboxHistory(current.mailboxHistory, current.mailbox, account.historyLimit)
   }));
 }
 

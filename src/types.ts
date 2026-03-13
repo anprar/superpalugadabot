@@ -80,6 +80,7 @@ export interface Phase2SurveyTask {
 
 export interface BotSessionData {
   __language_code?: SupportedLocale;
+  historyRetentionEndsAt?: string | null;
   mailbox?: MailboxSession;
   mailboxHistory?: MailboxSession[];
   inboxCache?: InboxCache;
@@ -99,6 +100,7 @@ export interface UserAccount {
   updatedAt: string;
   startedAt?: string;
   expiresAt?: string;
+  historyRetentionEndsAt?: string;
   reminderSentAt?: string;
 }
 

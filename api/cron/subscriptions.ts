@@ -2,7 +2,7 @@ import { getBot } from "../../src/bot.js";
 import { downgradeExpiredAccount, isExpiredPaidAccount, isReminderDue, listTrackedAccounts, markReminderSent } from "../../src/accounts.js";
 import { getCronSecret } from "../../src/config.js";
 import { buildPlanExpiredMessage, buildPlanReminderMessage } from "../../src/messages.js";
-import { enforceMailboxHistoryLimit, getChatSession } from "../../src/sessions.js";
+import { getChatSession, syncChatSessionWithAccount } from "../../src/sessions.js";
 import type { SupportedLocale } from "../../src/types.js";
 
 function getLocale(chatLocale?: string): SupportedLocale {
@@ -36,7 +36,7 @@ export async function GET(request: Request): Promise<Response> {
 
     if (isExpiredPaidAccount(account)) {
       const downgradedAccount = await downgradeExpiredAccount(account.userId);
-      await enforceMailboxHistoryLimit(account.chatId, downgradedAccount.historyLimit).catch(() => undefined);
+      await syncChatSessionWithAccount(account.chatId, downgradedAccount).catch(() => undefined);
       await bot.api.sendMessage(account.chatId, buildPlanExpiredMessage(locale), {
         parse_mode: "HTML"
       }).catch(() => undefined);

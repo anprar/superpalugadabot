@@ -424,6 +424,37 @@ function scoreInboxItems(items: InboxItem[]): number {
   }, 0);
 }
 
+function shouldReloadInboxFromDom(payload: unknown, jsonItems: InboxItem[]): { reload: boolean; attempts: number } {
+  const inboxEntryCount = countInboxEntries(payload);
+
+  if (jsonItems.length === 0) {
+    return {
+      reload: true,
+      attempts: inboxEntryCount > 0 ? 2 : 1
+    };
+  }
+
+  if (inboxEntryCount > jsonItems.length) {
+    return {
+      reload: true,
+      attempts: 2
+    };
+  }
+
+  const jsonScore = scoreInboxItems(jsonItems);
+  if (jsonScore < jsonItems.length * 2) {
+    return {
+      reload: true,
+      attempts: 2
+    };
+  }
+
+  return {
+    reload: false,
+    attempts: 0
+  };
+}
+
 function selectBestInboxItems(jsonItems: InboxItem[], domItems: InboxItem[]): { items: InboxItem[]; source: InboxCache["source"] } {
   if (jsonItems.length === 0 && domItems.length === 0) {
     return {
@@ -596,15 +627,15 @@ export async function refreshInbox(
       }
     }
 
-    const inboxEntryCount = countInboxEntries(payload);
     const jsonItems = normalizeInboxFromJson(payload);
     let domItems: InboxItem[] = [];
+    const domFallback = shouldReloadInboxFromDom(payload, jsonItems);
 
-    if (inboxEntryCount > 0 || jsonItems.length === 0) {
+    if (domFallback.reload) {
       domItems = await reloadAndParseInboxFromDom(
         page,
         existingMailbox.email,
-        inboxEntryCount > 0 ? 3 : 2
+        domFallback.attempts
       );
     }
 

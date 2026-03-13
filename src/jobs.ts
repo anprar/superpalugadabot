@@ -1,5 +1,5 @@
 import { ALLOWED_MAILBOX_DOMAINS } from "./config.js";
-import { getUserAccountById } from "./accounts.js";
+import { ensureHistoryRetentionForWrite } from "./accounts.js";
 import { getBot } from "./bot.js";
 import { buildMainMenuKeyboard } from "./keyboards.js";
 import {
@@ -20,7 +20,7 @@ import {
   releaseJobLock,
   saveBrowserState
 } from "./sessions.js";
-import type { BrowserStorageState, MailJobPayload, ScraperMailboxResult, ScraperRefreshResult } from "./types.js";
+import type { BrowserStorageState, MailJobPayload, ScraperMailboxResult, ScraperRefreshResult, UserAccount } from "./types.js";
 
 const INTERNAL_RETRY_ATTEMPTS = 2;
 const INTERNAL_RETRY_DELAY_MS = 1_200;
@@ -148,12 +148,15 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
 
     if (payload.type === "generate") {
       const previousBrowserState = await getBrowserState<BrowserStorageState>(payload.chatId);
-      const account = await getUserAccountById(payload.userId ?? payload.chatId, payload.chatId);
+      const account = await ensureHistoryRetentionForWrite({
+        userId: payload.userId ?? payload.chatId,
+        chatId: payload.chatId
+      });
       const result = await runWithInternalRetry(payload, progress, async (attempt) => {
         const state = attempt === 1 ? previousBrowserState : undefined;
         return generateMailbox(state, (stage) => progress.update(stage));
       });
-      const nextSession = await persistMailboxResult(payload.chatId, result, account.historyLimit);
+      const nextSession = await persistMailboxResult(payload.chatId, result, account);
       await sendResultMessage(
         payload.chatId,
         locale,
@@ -175,12 +178,15 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
     }
 
     const browserState = await getBrowserState<BrowserStorageState>(payload.chatId);
-    const account = await getUserAccountById(payload.userId ?? payload.chatId, payload.chatId);
+    const account = await ensureHistoryRetentionForWrite({
+      userId: payload.userId ?? payload.chatId,
+      chatId: payload.chatId
+    });
     const refreshed = await runWithInternalRetry(payload, progress, async (attempt) => {
       const state = attempt === 1 ? browserState : undefined;
       return refreshInbox(session.mailbox!, state, (stage) => progress.update(stage));
     });
-    const nextSession = await persistRefreshResult(payload.chatId, refreshed, account.historyLimit);
+    const nextSession = await persistRefreshResult(payload.chatId, refreshed, account);
     await sendResultMessage(
       payload.chatId,
       locale,
@@ -239,23 +245,25 @@ export async function runMailJob(payload: MailJobPayload): Promise<void> {
   }
 }
 
-async function persistMailboxResult(chatId: number, result: ScraperMailboxResult, historyLimit: number) {
+async function persistMailboxResult(chatId: number, result: ScraperMailboxResult, account: Pick<UserAccount, "historyLimit" | "historyRetentionEndsAt">) {
   await saveBrowserState(chatId, result.storageState);
   return patchChatSession(chatId, (current) => ({
     ...current,
+    historyRetentionEndsAt: account.historyRetentionEndsAt ?? null,
     mailbox: result.mailbox,
-    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox, historyLimit),
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox, account.historyLimit),
     inboxCache: result.inboxCache,
     pendingJob: undefined
   }));
 }
 
-async function persistRefreshResult(chatId: number, result: ScraperRefreshResult, historyLimit: number) {
+async function persistRefreshResult(chatId: number, result: ScraperRefreshResult, account: Pick<UserAccount, "historyLimit" | "historyRetentionEndsAt">) {
   await saveBrowserState(chatId, result.storageState);
   return patchChatSession(chatId, (current) => ({
     ...current,
+    historyRetentionEndsAt: account.historyRetentionEndsAt ?? null,
     mailbox: result.mailbox,
-    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox, historyLimit),
+    mailboxHistory: mergeMailboxHistory(current.mailboxHistory, result.mailbox, account.historyLimit),
     inboxCache: result.inboxCache,
     pendingJob: undefined
   }));

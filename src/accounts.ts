@@ -1,6 +1,7 @@
 import {
   ADMIN_CONTACT_USERNAME,
   ADMIN_USERNAME,
+  FREE_HISTORY_RETENTION_DAYS,
   MAX_MAILBOX_HISTORY_ITEMS,
   PAID_MAILBOX_HISTORY_ITEMS,
   PAID_SUBSCRIPTION_DAYS,
@@ -38,6 +39,10 @@ function addDays(value: string, days: number): string {
   return date.toISOString();
 }
 
+function buildFreeHistoryRetentionEndsAt(value: string): string {
+  return addDays(value, FREE_HISTORY_RETENTION_DAYS);
+}
+
 export function isAdminAccount(username?: string): boolean {
   return normalizeUsername(username) === ADMIN_USERNAME;
 }
@@ -69,7 +74,8 @@ function buildDefaultAccount(identity: AccountIdentity, createdAt = nowIso()): U
     plan: "free",
     historyLimit: MAX_MAILBOX_HISTORY_ITEMS,
     createdAt,
-    updatedAt: createdAt
+    updatedAt: createdAt,
+    historyRetentionEndsAt: buildFreeHistoryRetentionEndsAt(createdAt)
   };
 }
 
@@ -88,18 +94,21 @@ function reconcileAccount(account: UserAccount, identity?: Partial<AccountIdenti
       historyLimit: SPECIAL_ADMIN_HISTORY_ITEMS,
       startedAt: next.startedAt ?? next.createdAt,
       expiresAt: undefined,
+      historyRetentionEndsAt: undefined,
       reminderSentAt: undefined
     };
   }
 
   if (next.plan === "paid" && next.expiresAt) {
-    const expiresAt = new Date(next.expiresAt).getTime();
+    const expiresAtText = next.expiresAt;
+    const expiresAt = new Date(expiresAtText).getTime();
     if (!Number.isNaN(expiresAt) && expiresAt <= Date.now()) {
       return {
         ...next,
         plan: "free",
         historyLimit: MAX_MAILBOX_HISTORY_ITEMS,
         expiresAt: undefined,
+        historyRetentionEndsAt: buildFreeHistoryRetentionEndsAt(expiresAtText),
         reminderSentAt: undefined
       };
     }
@@ -110,6 +119,7 @@ function reconcileAccount(account: UserAccount, identity?: Partial<AccountIdenti
       ...next,
       historyLimit: MAX_MAILBOX_HISTORY_ITEMS,
       expiresAt: undefined,
+      historyRetentionEndsAt: next.historyRetentionEndsAt ?? buildFreeHistoryRetentionEndsAt(next.createdAt),
       reminderSentAt: undefined
     };
   }
@@ -117,11 +127,15 @@ function reconcileAccount(account: UserAccount, identity?: Partial<AccountIdenti
   if (next.plan === "paid") {
     return {
       ...next,
-      historyLimit: PAID_MAILBOX_HISTORY_ITEMS
+      historyLimit: PAID_MAILBOX_HISTORY_ITEMS,
+      historyRetentionEndsAt: undefined
     };
   }
 
-  return next;
+  return {
+    ...next,
+    historyRetentionEndsAt: undefined
+  };
 }
 
 async function saveAccount(account: UserAccount): Promise<UserAccount> {
@@ -150,8 +164,8 @@ export async function getUserAccountById(userId: number, chatId = userId): Promi
 export async function listTrackedAccounts(): Promise<UserAccount[]> {
   const ids = await getRedisClient().smembers<string[]>(ACCOUNT_INDEX_KEY);
   const uniqueIds = Array.from(new Set((ids ?? []).map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0)));
-  const accounts = await Promise.all(uniqueIds.map((userId) => getUserAccountById(userId)));
-  return accounts;
+  const accounts = await Promise.all(uniqueIds.map((userId) => getRedisClient().get<UserAccount>(accountKey(userId))));
+  return accounts.filter((account): account is UserAccount => Boolean(account));
 }
 
 export async function setUserPlan(options: {
@@ -179,6 +193,7 @@ export async function setUserPlan(options: {
       updatedAt,
       startedAt: undefined,
       expiresAt: undefined,
+      historyRetentionEndsAt: buildFreeHistoryRetentionEndsAt(updatedAt),
       reminderSentAt: undefined
     };
   } else if (options.plan === "paid") {
@@ -189,6 +204,7 @@ export async function setUserPlan(options: {
       updatedAt,
       startedAt: updatedAt,
       expiresAt: addDays(updatedAt, PAID_SUBSCRIPTION_DAYS),
+      historyRetentionEndsAt: undefined,
       reminderSentAt: undefined
     };
   } else {
@@ -200,6 +216,7 @@ export async function setUserPlan(options: {
       updatedAt,
       startedAt: existing.startedAt ?? updatedAt,
       expiresAt: undefined,
+      historyRetentionEndsAt: undefined,
       reminderSentAt: undefined
     };
   }
@@ -254,8 +271,42 @@ export function isExpiredPaidAccount(account: UserAccount, now = Date.now()): bo
   return !Number.isNaN(expiresAt) && expiresAt <= now;
 }
 
+export function hasHistoryRetentionExpired(account: Pick<UserAccount, "historyRetentionEndsAt">, now = Date.now()): boolean {
+  if (!account.historyRetentionEndsAt) {
+    return false;
+  }
+
+  const expiresAt = new Date(account.historyRetentionEndsAt).getTime();
+  return !Number.isNaN(expiresAt) && expiresAt <= now;
+}
+
+export async function ensureHistoryRetentionForWrite(identity: AccountIdentity): Promise<UserAccount> {
+  const account = await getUserAccount(identity);
+  if (account.plan !== "free" || !hasHistoryRetentionExpired(account)) {
+    return account;
+  }
+
+  const updatedAt = nowIso();
+  const next = {
+    ...account,
+    updatedAt,
+    historyRetentionEndsAt: buildFreeHistoryRetentionEndsAt(updatedAt)
+  };
+  return saveAccount(next);
+}
+
 export async function downgradeExpiredAccount(userId: number): Promise<UserAccount> {
-  return setUserPlan({ userId, plan: "free" });
+  const existing = await getRedisClient().get<UserAccount>(accountKey(userId));
+  const downgraded = await setUserPlan({ userId, plan: "free" });
+  if (!existing?.expiresAt) {
+    return downgraded;
+  }
+
+  const corrected = {
+    ...downgraded,
+    historyRetentionEndsAt: buildFreeHistoryRetentionEndsAt(existing.expiresAt)
+  };
+  return saveAccount(corrected);
 }
 
 export function getPlanLabel(plan: AccountPlan): string {
