@@ -1,11 +1,89 @@
 import { ALLOWED_MAILBOX_DOMAINS } from "./config.js";
 import type { KoreaProfileSuggestion, SupportedLocale } from "./types.js";
 
-const EASY_CONSONANTS = ["b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "z"] as const;
-const EASY_VOWELS = ["a", "e", "i", "o", "u"] as const;
-const EASY_DIGITS = ["2", "3", "4", "5", "6", "7", "8", "9"] as const;
 const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DISPLAY_TIME_ZONE = "Asia/Jakarta";
+const READABLE_PASSWORD_ANIMALS = [
+  "Gajah",
+  "Anjing",
+  "Kuda",
+  "Harimau",
+  "Singa",
+  "Kucing",
+  "Burung",
+  "Ular",
+  "Lumba",
+  "Panda",
+  "Sapi",
+  "Kerbau",
+  "Rusa",
+  "Ayam",
+  "Ikan",
+  "Kelinci",
+  "Kangguru",
+  "Elang",
+  "Laba",
+  "Kupu",
+  "Beruang",
+  "Serigala",
+  "KudaNil",
+  "Musang",
+  "Kambing"
+] as const;
+const READABLE_PASSWORD_ACTIONS = [
+  "Makan",
+  "Minum",
+  "Tidur",
+  "Jalan",
+  "Lari",
+  "Lompat",
+  "Renang",
+  "Menyanyi",
+  "Menari",
+  "Membaca",
+  "Menulis",
+  "Masak",
+  "Main",
+  "Ngopi",
+  "Belajar",
+  "Bekerja",
+  "Menonton",
+  "Bernyanyi",
+  "Berpikir",
+  "Memancing",
+  "Memanjat",
+  "Berjalan",
+  "Melukis",
+  "Mengetik",
+  "Bersantai"
+] as const;
+const READABLE_PASSWORD_FOODS = [
+  "Nasi",
+  "Roti",
+  "Kopi",
+  "Teh",
+  "Susu",
+  "Pisang",
+  "Jeruk",
+  "Apel",
+  "Mangga",
+  "Duren",
+  "Madu",
+  "Soto",
+  "Bakso",
+  "Sate",
+  "Mie",
+  "Padi",
+  "Air",
+  "Coklat",
+  "Keju",
+  "Donat",
+  "Eskrim",
+  "Bubur",
+  "Kentang",
+  "Cabe",
+  "Sayur"
+] as const;
 const READABLE_MAILBOX_NAMES = [
   "agus",
   "andi",
@@ -259,20 +337,8 @@ export function escapeHtml(value: string): string {
 }
 
 export function buildReadablePassword(): string {
-  const buildWord = (): string => {
-    const word = [
-      pickRandom(EASY_CONSONANTS),
-      pickRandom(EASY_VOWELS),
-      pickRandom(EASY_CONSONANTS),
-      pickRandom(EASY_VOWELS),
-      pickRandom(EASY_CONSONANTS)
-    ].join("");
-
-    return word.charAt(0).toUpperCase() + word.slice(1);
-  };
-
-  const digits = `${pickRandom(EASY_DIGITS)}${pickRandom(EASY_DIGITS)}`;
-  return `${buildWord()}${buildWord()}${digits}`;
+  const suffix = randomBetween(0, 99).toString();
+  return `${pickRandom(READABLE_PASSWORD_ANIMALS)}${pickRandom(READABLE_PASSWORD_ACTIONS)}${pickRandom(READABLE_PASSWORD_FOODS)}${suffix}`;
 }
 
 export function buildReadableMailboxLocalPart(): string {
